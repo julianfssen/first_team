@@ -10,6 +10,7 @@ import { Landing } from "@/components/screens/Landing";
 import { CreatePlayer } from "@/components/screens/CreatePlayer";
 import { CareerHub } from "@/components/screens/CareerHub";
 import { LiveMatch } from "@/components/screens/LiveMatch";
+import { Practice } from "@/components/screens/Practice";
 import { SkillChallengeView } from "@/components/game/Skill";
 import { generateMatchContext } from "@/lib/game/matchEngine";
 import { useGame } from "@/lib/store/gameStore";
@@ -112,6 +113,28 @@ describe("screen rendering", () => {
       fireEvent.click(screen.getByText("SLIDE!"));
       vi.advanceTimersByTime(700);
       expect(onComplete).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders the shot practice screen", () => {
+    vi.useFakeTimers();
+    try {
+      useGame.getState().newCareer({
+        name: "Practice Tester",
+        nationality: "Brazil",
+        startingRegion: "SOUTH_AMERICA",
+        position: "ST",
+        strongFoot: "RIGHT",
+        playstyle: "CLINICAL",
+        personality: "AMBITIOUS",
+        background: "ACADEMY_KID",
+        seed: "practice-seed-1",
+      });
+      render(<Practice />);
+      expect(screen.getByText("Shot Practice")).toBeTruthy();
+      expect(screen.getByText("Elite (88)")).toBeTruthy();
     } finally {
       vi.useRealTimers();
     }

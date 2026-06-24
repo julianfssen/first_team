@@ -47,6 +47,7 @@ export function CareerHub() {
       <div className="flex items-center justify-between px-4 pt-5 pb-2">
         <h1 className="text-lg font-bold">Career Hub</h1>
         <div className="flex gap-3 text-sm text-[var(--muted)]">
+          <button onClick={() => setScreen("PRACTICE")}>🎯 Practice</button>
           <button onClick={() => setScreen("TIMELINE")}>Timeline</button>
           <button
             onClick={() => {

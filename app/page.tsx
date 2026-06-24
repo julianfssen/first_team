@@ -15,6 +15,7 @@ import { SeasonRecap } from "@/components/screens/SeasonRecap";
 import { TransferWindow } from "@/components/screens/TransferWindow";
 import { CareerTimeline } from "@/components/screens/CareerTimeline";
 import { Retirement } from "@/components/screens/Retirement";
+import { Practice } from "@/components/screens/Practice";
 
 function ScreenBody() {
   const screen = useGame((s) => s.screen);
@@ -38,6 +39,7 @@ function ScreenBody() {
     case "TRANSFER": return <TransferWindow />;
     case "TIMELINE": return <CareerTimeline />;
     case "RETIREMENT": return <Retirement />;
+    case "PRACTICE": return <Practice />;
     default: return <Landing />;
   }
 }

@@ -60,7 +60,8 @@ export type Screen =
   | "SEASON_RECAP"
   | "TRANSFER"
   | "TIMELINE"
-  | "RETIREMENT";
+  | "RETIREMENT"
+  | "PRACTICE";
 
 interface GameState {
   screen: Screen;
