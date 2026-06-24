@@ -96,6 +96,11 @@ is sometimes the wrong one). Built in stages:
   outcome pipeline. Falls back to the RNG roll if no input (back-compatible).
   Skill kind/flavor inferred from the choice's `check`.
 
+  **Curl:** hooking the pull-back path curls the shot (`SkillInput.curl`, signed
+  from the drag's bow). The ball bends late around the keeper (curl slightly
+  beats their reach) — aim near the keeper and curl it into the corner — but
+  over-bending sails wide. Aim guide + ball flight render the bend.
+
   **Shot model (reworked for difficulty):** the keeper sits centrally and CLOSES
   the gap over a short shot-clock (`windowMs`) — `keeperReach()` (shared by the
   scene and the scorer so the drawn danger zone == what's scored) grows with

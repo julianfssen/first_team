@@ -132,19 +132,26 @@ export function keeperReach(challenge: SkillChallenge, timing: number, power: nu
 /** Score the player's raw input against the challenge → accuracy 0..1. */
 export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): number {
   if (challenge.kind === "AIM") {
-    const aim = clamp(input.value, 0, 1);
     const power = clamp(input.power ?? 0.5, 0, 1);
     const timing = clamp(input.timing ?? 1, 0, 1);
+    const curl = clamp(input.curl ?? 0, -1, 1);
     const floor = challenge.powerFloor ?? 0.25;
 
     if (power > 0.97) return 0.18; // ballooned over the bar
     if (power < floor) return 0.2; // too soft — the keeper gathers it
 
-    const reach = keeperReach(challenge, timing, power);
-    const dist = Math.abs(aim - 0.5); // 0 = down the middle, 0.5 = right on a post
+    // The ball bends late: aim is where you struck it, curl carries it across.
+    // (aim 0..1 spans post-to-post; bending beyond the frame goes wide.)
+    const bent = clamp(input.value, 0, 1) + curl * 0.25;
+    if (bent < -0.03 || bent > 1.03) return 0.2; // curled wide of the post
+    const finalAim = clamp(bent, 0, 1);
+
+    // A curled shot beats the keeper a touch — they can't adjust to late swerve.
+    const reach = Math.max(0.05, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05);
+    const dist = Math.abs(finalAim - 0.5); // 0 = down the middle, 0.5 = right on a post
     if (dist <= reach) return clamp(0.1 + dist * 0.25, 0, 0.32); // within the keeper's reach → saved
     const margin = dist - reach; // how cleanly you beat the keeper
-    return clamp(0.5 + margin * 1.7 + dist * 0.3, 0, 1);
+    return clamp(0.5 + margin * 1.7 + dist * 0.3 + Math.abs(curl) * 0.05, 0, 1);
   }
 
   // TIMING / RUN

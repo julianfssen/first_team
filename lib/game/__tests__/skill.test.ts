@@ -106,6 +106,19 @@ describe("skill scoring", () => {
     expect(scuffed).toBeLessThan(firm);
   });
 
+  it("a curled shot bends a central effort past the keeper", () => {
+    const straight = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2, curl: 0 });
+    const curled = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2, curl: 1 });
+    expect(straight).toBeLessThan(0.3); // straight down the middle → saved
+    expect(curled).toBeGreaterThan(straight);
+    expect(["GREAT", "GOOD"]).toContain(tierFromAccuracy(curled)); // curled into the corner → goal
+  });
+
+  it("over-curling sends it wide", () => {
+    const wide = scoreSkillInput(shotChallenge, { value: 0.9, power: 0.7, timing: 0.2, curl: 0.6 });
+    expect(wide).toBeLessThan(0.3);
+  });
+
   it("scores a perfectly timed commit high and a mistimed one low", () => {
     const challenge = { kind: "TIMING" as const, flavor: "TACKLE" as const, forgiveness: 0.6, label: "", prompt: "", sweetCenter: 0.5, sweetWidth: 0.3 };
     expect(scoreSkillInput(challenge, { value: 0.5 })).toBeCloseTo(1, 5);

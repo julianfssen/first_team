@@ -167,6 +167,7 @@ export function Practice() {
               <Debug label="Aim" value={result.input.value.toFixed(2)} />
               <Debug label="Power" value={`${Math.round((result.input.power ?? 0) * 100)}%`} />
               <Debug label="Timing" value={`${Math.round((result.input.timing ?? 0) * 100)}%`} />
+              <Debug label="Curl" value={(result.input.curl ?? 0).toFixed(2)} />
               <Debug label="Shot" value={result.shotType.replace(/_/g, " ").toLowerCase()} />
             </div>
             <Button full className="mt-3" onClick={nextShot}>

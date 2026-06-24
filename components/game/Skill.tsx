@@ -44,19 +44,57 @@ const ANCHOR = { x: 50, y: 58 };
 const GOAL_Y = 20;
 const MOUTH_L = 12;
 const MOUTH_R = 88;
+const SPAN = MOUTH_R - MOUTH_L;
 const AIM_RANGE = 64; // horizontal drag (svg units) to swing post-to-post
 const MAX_PULL_Y = 26; // downward pull for full power
+const CURL_SCALE = 12; // pull-back bow (svg units) for full curl
+const BOW = 16; // visual flight bend per unit curl
+
+/** Signed curl (-1 left .. +1 right) from how much the pull-back path bowed. */
+function computeCurl(path: { x: number; y: number }[]): number {
+  if (path.length < 3) return 0;
+  const a = path[0];
+  const b = path[path.length - 1];
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const len = Math.hypot(vx, vy);
+  if (len < 5) return 0;
+  let dev = 0;
+  for (let i = 1; i < path.length - 1; i++) {
+    const p = path[i];
+    const d = (vx * (p.y - a.y) - vy * (p.x - a.x)) / len; // perpendicular offset from the chord
+    if (Math.abs(d) > Math.abs(dev)) dev = d;
+  }
+  // Sign chosen so hooking the pull right curls the ball right — flip if it feels inverted.
+  return Math.max(-1, Math.min(1, -dev / CURL_SCALE));
+}
+
+/** Where the ball ends up after the bend (matches the engine's bent landing). */
+function bentLanding(aim: number, curl: number): number {
+  return Math.max(0, Math.min(1, aim + curl * 0.25));
+}
+
+/** Quadratic control point that bows a path from the ball toward (endX, endY). */
+function controlPoint(endX: number, endY: number, curl: number): { x: number; y: number } {
+  const dx = endX - ANCHOR.x;
+  const dy = endY - ANCHOR.y;
+  const L = Math.hypot(dx, dy) || 1;
+  const off = curl * BOW;
+  return { x: (ANCHOR.x + endX) / 2 + (-dy / L) * off, y: (ANCHOR.y + endY) / 2 + (dx / L) * off };
+}
 
 function ShotScene({ challenge, onComplete }: SceneProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const pathRef = useRef<{ x: number; y: number }[]>([]);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
-  const [shot, setShot] = useState<{ crossX: number } | null>(null);
+  const [curl, setCurl] = useState(0); // live curl from the pull-back bow
+  const [shot, setShot] = useState<{ crossX: number; curl: number } | null>(null);
   const [t, setT] = useState(0); // fraction of the closing window elapsed
   const startRef = useRef<number | null>(null);
   const firedRef = useRef(false);
   const fireRef = useRef<(() => void) | null>(null);
 
-  const span = MOUTH_R - MOUTH_L;
+  const span = SPAN;
   const windowMs = challenge.windowMs ?? 1700;
 
   function toSvg(e: React.PointerEvent): { x: number; y: number } {
@@ -79,19 +117,20 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
     };
   }
 
-  function doFire(aim: number, power: number, crossX: number) {
+  function doFire(aim: number, power: number, curl: number) {
     if (firedRef.current) return;
     firedRef.current = true;
-    setShot({ crossX });
+    const landing = MOUTH_L + bentLanding(aim, curl) * span; // where the bend takes it
+    setShot({ crossX: landing, curl });
     const timing = clamp(t, 0, 1);
-    window.setTimeout(() => onComplete({ value: aim, power, timing }), 700);
+    window.setTimeout(() => onComplete({ value: aim, power, timing, curl }), 700);
   }
   // Keep the auto-fire closure fresh so the rAF loop fires with the latest drag
   // (a weak, central effort if you dithered until the window ran out).
   useEffect(() => {
     fireRef.current = () => {
       const c = drag ? compute(drag) : { aim: 0.5, power: 0.4, crossX: ANCHOR.x };
-      doFire(c.aim, c.power, c.crossX);
+      doFire(c.aim, c.power, computeCurl(pathRef.current));
     };
   });
 
@@ -113,22 +152,32 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
   function onDown(e: React.PointerEvent) {
     if (shot) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    setDrag(toSvg(e));
+    const p = toSvg(e);
+    pathRef.current = [p];
+    setCurl(0);
+    setDrag(p);
   }
   function onMove(e: React.PointerEvent) {
     if (shot || !drag) return;
-    setDrag(toSvg(e));
+    const p = toSvg(e);
+    if (pathRef.current.length < 80) pathRef.current.push(p);
+    setCurl(computeCurl(pathRef.current));
+    setDrag(p);
   }
   function onUp() {
     if (shot || !drag) return;
     const c = compute(drag);
-    doFire(c.aim, c.power, c.crossX);
+    doFire(c.aim, c.power, computeCurl(pathRef.current));
   }
 
   // The keeper's reach (drawn = what's scored), reacting to time + your power.
   const livePower = live?.power ?? 0.55;
   const reach = keeperReach(challenge, t, livePower);
   const bandHalf = reach * span;
+  const liveCurl = drag && !shot ? curl : 0;
+  const liveLandingX = live ? MOUTH_L + bentLanding(live.aim, liveCurl) * span : ANCHOR.x;
+  const guideCtrl = controlPoint(liveLandingX, GOAL_Y, liveCurl);
+  const flightCtrl = shot ? controlPoint(shot.crossX, GOAL_Y, shot.curl) : null;
   const ballPos = shot ? { x: shot.crossX, y: GOAL_Y } : drag ? drag : ANCHOR;
   const powerPct = Math.round((live?.power ?? 0) * 100);
   const clockPct = Math.max(0, (1 - t) * 100);
@@ -166,22 +215,33 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
           <text x="50" y="22" fontSize="6" textAnchor="middle">🧤</text>
         </motion.g>
 
-        {/* aim guide */}
+        {/* aim guide — bends with your hooked pull-back */}
         {live && (
           <>
-            <line x1={ANCHOR.x} y1={ANCHOR.y} x2={live.crossX} y2={GOAL_Y} stroke="var(--accent)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.85" />
-            <circle cx={live.crossX} cy={GOAL_Y} r="1.8" fill="var(--accent)" />
+            <path
+              d={`M ${ANCHOR.x} ${ANCHOR.y} Q ${guideCtrl.x} ${guideCtrl.y} ${liveLandingX} ${GOAL_Y}`}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="0.8"
+              strokeDasharray="2 2"
+              opacity="0.85"
+            />
+            <circle cx={liveLandingX} cy={GOAL_Y} r="1.8" fill="var(--accent)" />
           </>
         )}
 
-        {/* ball */}
+        {/* ball — curls along the bent path on the strike */}
         <motion.circle
           r="3"
           fill="#ffffff"
           stroke="#0c1f14"
           strokeWidth="0.6"
-          animate={{ cx: ballPos.x, cy: ballPos.y }}
-          transition={{ duration: shot ? 0.45 : 0, ease: "easeOut" }}
+          animate={
+            shot && flightCtrl
+              ? { cx: [ANCHOR.x, flightCtrl.x, shot.crossX], cy: [ANCHOR.y, flightCtrl.y, GOAL_Y] }
+              : { cx: ballPos.x, cy: ballPos.y }
+          }
+          transition={{ duration: shot ? 0.5 : 0, ease: "easeOut" }}
         />
         <circle cx={ANCHOR.x} cy={ANCHOR.y} r="0.8" fill="#ffffff" opacity="0.4" />
       </svg>
@@ -204,7 +264,7 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
         </div>
       </div>
       <p className="mt-1 text-center text-[10px] text-[var(--muted)]">
-        {shot ? "Struck!" : "Pull back for power, steer to a corner, release before the gap shuts"}
+        {shot ? "Struck!" : "Pull back for power, steer to aim — hook the pull to curl it round the keeper"}
       </p>
     </div>
   );
