@@ -426,6 +426,32 @@ export type ActivePassage = {
   slotIndex: number;
 };
 
+// ---------------------------------------------------------------------------
+// Skill flourishes (Stage 3): marquee choices trigger a quick skill mini-game.
+// ---------------------------------------------------------------------------
+
+/** AIM = pick-a-spot vs the keeper; TIMING = stop the sweeping marker. */
+export type SkillKind = "AIM" | "TIMING";
+
+/** Parameters for a skill mini-game, derived deterministically from competence. */
+export type SkillChallenge = {
+  kind: SkillKind;
+  /** 0..1; higher = easier (bigger sweet zone / fewer covered shooting zones). */
+  forgiveness: number;
+  label: string;
+  prompt: string;
+  // AIM:
+  zones?: number;
+  /** Zone indices the keeper covers. */
+  keeperZones?: number[];
+  // TIMING:
+  sweetCenter?: number; // 0..1
+  sweetWidth?: number; // 0..1
+};
+
+/** The player's raw input: AIM = chosen zone index; TIMING = stop position 0..1. */
+export type SkillInput = { value: number };
+
 /** A moment instantiated for a specific match. */
 export type MatchMoment = {
   id: string;

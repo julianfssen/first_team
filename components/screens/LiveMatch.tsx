@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGame } from "@/lib/store/gameStore";
-import type { MatchBeat, MatchSituation } from "@/lib/game/types";
+import type { MatchBeat, MatchMomentChoiceTemplate, MatchSituation } from "@/lib/game/types";
 import { clubLabel } from "@/lib/game/world";
+import { skillKindForChoice, buildSkillChallenge } from "@/lib/game/skillEngine";
 import { Button, ActionBar, Pill, cx } from "@/components/ui";
 import { RiskBadge } from "@/components/game/Cards";
+import { SkillChallengeView } from "@/components/game/Skill";
 import { outcomeIsPositive, pretty } from "@/lib/ui/format";
 
 function MomentumBar({ momentum }: { momentum: number }) {
@@ -103,6 +105,15 @@ export function LiveMatch() {
   const finishLiveMatch = useGame((s) => s.finishLiveMatch);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [skillChoiceId, setSkillChoiceId] = useState<string | null>(null);
+
+  function onChooseActive(choice: MatchMomentChoiceTemplate) {
+    if (skillKindForChoice(choice) && buildSkillChallenge(career, matchState, choice.id)) {
+      setSkillChoiceId(choice.id);
+    } else {
+      resolveLiveChoice(choice.id);
+    }
+  }
 
   // Stream the next beat on a timer, pausing for decisions and at full time.
   useEffect(() => {
@@ -191,16 +202,42 @@ export function LiveMatch() {
                   {beat.situation && (
                     <SituationBanner situation={beat.situation} score={score} minute={moment.minute} />
                   )}
-                  {moment.choices.map((choice) => (
-                    <button
-                      key={choice.id}
-                      onClick={() => resolveLiveChoice(choice.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-left transition hover:border-[var(--accent)]/60 active:scale-[0.99]"
-                    >
-                      <span className="font-semibold">{choice.label}</span>
-                      <RiskBadge risk={choice.risk} />
-                    </button>
-                  ))}
+                  {skillChoiceId ? (
+                    (() => {
+                      const challenge = buildSkillChallenge(career, matchState, skillChoiceId);
+                      if (!challenge) return null;
+                      const id = skillChoiceId;
+                      return (
+                        <SkillChallengeView
+                          challenge={challenge}
+                          onComplete={(input) => {
+                            setSkillChoiceId(null);
+                            resolveLiveChoice(id, input);
+                          }}
+                          onCancel={() => setSkillChoiceId(null)}
+                        />
+                      );
+                    })()
+                  ) : (
+                    moment.choices.map((choice) => {
+                      const skill = skillKindForChoice(choice);
+                      return (
+                        <button
+                          key={choice.id}
+                          onClick={() => onChooseActive(choice)}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3 text-left transition hover:border-[var(--accent)]/60 active:scale-[0.99]"
+                        >
+                          <span className="font-semibold">
+                            {choice.label}
+                            {skill && (
+                              <span className="ml-2 text-[var(--accent)]">{skill === "AIM" ? "🎯" : "⏱"}</span>
+                            )}
+                          </span>
+                          <RiskBadge risk={choice.risk} />
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>

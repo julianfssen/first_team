@@ -10,6 +10,7 @@ import { Landing } from "@/components/screens/Landing";
 import { CreatePlayer } from "@/components/screens/CreatePlayer";
 import { CareerHub } from "@/components/screens/CareerHub";
 import { LiveMatch } from "@/components/screens/LiveMatch";
+import { SkillChallengeView } from "@/components/game/Skill";
 import { generateMatchContext } from "@/lib/game/matchEngine";
 import { useGame } from "@/lib/store/gameStore";
 
@@ -83,5 +84,31 @@ describe("screen rendering", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("AIM skill mini-game reports the tapped zone", () => {
+    const onComplete = vi.fn();
+    render(
+      <SkillChallengeView
+        challenge={{ kind: "AIM", forgiveness: 0.9, label: "Pick your spot", prompt: "p", zones: 5, keeperZones: [2] }}
+        onComplete={onComplete}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getAllByLabelText("corner")[0]);
+    expect(onComplete).toHaveBeenCalledWith({ value: 0 });
+  });
+
+  it("TIMING skill mini-game reports a value on STOP", () => {
+    const onComplete = vi.fn();
+    render(
+      <SkillChallengeView
+        challenge={{ kind: "TIMING", forgiveness: 0.6, label: "Time it", prompt: "p", sweetCenter: 0.5, sweetWidth: 0.3 }}
+        onComplete={onComplete}
+        onCancel={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("STOP"));
+    expect(onComplete).toHaveBeenCalled();
   });
 });

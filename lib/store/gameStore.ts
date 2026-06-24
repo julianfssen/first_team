@@ -22,6 +22,7 @@ import type {
   MatchState,
   RetirementReason,
   SeasonRecap,
+  SkillInput,
   TransferOffer,
   WeeklyChoiceId,
 } from "@/lib/game/types";
@@ -96,7 +97,7 @@ interface GameState {
 
   kickOff: () => void;
   advanceOne: () => void;
-  resolveLiveChoice: (choiceId: string) => void;
+  resolveLiveChoice: (choiceId: string, skillInput?: SkillInput) => void;
   finishLiveMatch: () => void;
   continueFromPostMatch: () => void;
 
@@ -240,10 +241,10 @@ export const useGame = create<GameState>((set, get) => {
       });
     },
 
-    resolveLiveChoice: (choiceId) => {
+    resolveLiveChoice: (choiceId, skillInput) => {
       const { career, matchState } = get();
       if (!career || !matchState) return;
-      const { state, beats } = resolvePlayerBeat(career, matchState, choiceId);
+      const { state, beats } = resolvePlayerBeat(career, matchState, choiceId, skillInput);
       // The passage may carry on (ADVANCE on success) — keep awaiting input then.
       set({ matchState: state, feed: [...get().feed, ...beats], awaitingChoice: state.pendingPassage != null });
     },

@@ -25,6 +25,7 @@ lib/game/        Pure engine (deterministic, seeded RNG, no React/DOM)
   matchEngine.ts   Context, moment templates, shared resolveChoiceOutcome core, applyMatchResult, commitWeek
   matchSimEngine.ts "Living Match": startMatch → advanceMatch (beats) → resolvePlayerBeat → finalizeMatch; momentum/stamina/in-match confidence + contextual payoff (safe is sometimes wrong)
   passages.ts      Multi-stage passage pool: wraps single moments, walks stages (ADVANCE/FINISH/END)
+  skillEngine.ts   Marquee skill mini-games: skillKindForChoice, buildSkillChallenge (stat-sized window), scoreSkillInput → tier
   ratingEngine.ts  OUTCOME_EFFECTS table (rating + stat deltas per outcome) + match rating
   progressionEngine.ts  Training growth (age-gated, diminishing returns)
   agingEngine.ts   End-of-season aging (physical decline / mental growth)
@@ -86,8 +87,13 @@ is sometimes the wrong one). Built in stages:
   succeeds, FINISH/END close it out). Single moments are wrapped as 1-stage
   passages (`lib/game/passages.ts`); genuine multi-stage ones live in
   `data/passages.ts` (~21, ≥3 per family) and are biased to appear on big moments.
-- **Stage 3 — todo:** stat-gated skill flourishes on marquee beats (shot
-  pick-a-corner, penalty timing, 1v1 read, last-ditch tackle).
+- **Stage 3 — done:** stat-gated skill flourishes on marquee beats. A choice
+  with check SHOOT → AIM (pick-a-corner vs keeper); GK_SAVE / high-risk DEFEND →
+  TIMING (stop the marker). `skillEngine` sizes the success window from
+  deterministic competence (stats/form/traits − fatigue − pressure); the
+  player's input resolves execution → tier → normal outcome pipeline. If no
+  skill input is supplied it falls back to the RNG roll (back-compatible).
+  Mini-games: `components/game/Skill.tsx`.
 - **Stage 4 — todo:** consequences & juice (substitution risk, confidence
   streak surfacing, Moment-of-the-Match presentation, animation).
 

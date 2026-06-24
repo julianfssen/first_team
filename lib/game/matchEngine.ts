@@ -231,7 +231,7 @@ function tierFromScore(score: number, risk: string): ResolutionTier {
   return "DISASTER";
 }
 
-function outcomeForTier(choice: MatchMomentChoiceTemplate, tier: ResolutionTier): MatchOutcomeType {
+export function outcomeForTier(choice: MatchMomentChoiceTemplate, tier: ResolutionTier): MatchOutcomeType {
   switch (tier) {
     case "GREAT":
     case "GOOD":
@@ -257,19 +257,18 @@ export type ResolveOpts = {
 };
 
 /**
- * Shared core: resolve one moment choice into an outcome. Pure — no mutation.
- * Used by both the quick `resolveMatchMoment` and the live simulator.
+ * Deterministic competence for a choice (no RNG noise). This is the raw skill
+ * score used both to roll an outcome (after adding noise) and to size a skill
+ * challenge's success window.
  */
-export function resolveChoiceOutcome(
+export function choiceCompetence(
   career: Career,
   ctx: MatchContext,
   moment: MatchMoment,
   choiceId: string,
   opts: ResolveOpts = {},
-): MatchMomentResult {
+): { choice: MatchMomentChoiceTemplate; score: number } {
   const choice = moment.choices.find((c) => c.id === choiceId) ?? moment.choices[0];
-  const r = rng(career.seed, "resolve", moment.id, choiceId);
-
   const base = weightedAttributeScore(career.attributes, CHECK_WEIGHTS[choice.check]);
   const s = career.status;
   const statusMod =
@@ -283,13 +282,26 @@ export function resolveChoiceOutcome(
     (moment.importance === "CLUTCH" ? -3 : moment.importance === "HIGH" ? -1.5 : 0) *
     (1 - s.confidence / 130);
   const fatigue = opts.fatigue ?? s.fatigue;
-  const noise = r.noise(13);
-
   const score =
     base + statusMod + traitMod - fatiguePenalty(fatigue) - oppPenalty +
-    momentPressure + (opts.extraMod ?? 0) + noise;
+    momentPressure + (opts.extraMod ?? 0);
+  return { choice, score };
+}
 
-  const tier = tierFromScore(score, choice.risk);
+/**
+ * Shared core: resolve one moment choice into an outcome. Pure — no mutation.
+ * Used by both the quick `resolveMatchMoment` and the live simulator.
+ */
+export function resolveChoiceOutcome(
+  career: Career,
+  ctx: MatchContext,
+  moment: MatchMoment,
+  choiceId: string,
+  opts: ResolveOpts = {},
+): MatchMomentResult {
+  const { choice, score } = choiceCompetence(career, ctx, moment, choiceId, opts);
+  const r = rng(career.seed, "resolve", moment.id, choiceId);
+  const tier = tierFromScore(score + r.noise(13), choice.risk);
   let outcome = outcomeForTier(choice, tier);
 
   // Hot-headed players occasionally tip a bad high-risk tackle into a card.

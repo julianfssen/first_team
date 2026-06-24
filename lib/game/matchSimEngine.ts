@@ -28,16 +28,19 @@ import type {
   PlayerStatus,
   Risk,
   SeasonStats,
+  SkillInput,
 } from "./types";
 import { COMMENTARY } from "@/data/commentary";
 import {
   resolveChoiceOutcome,
+  outcomeForTier,
   MOMENT_COUNT_BY_IMPORTANCE,
   pickHeadline,
   DEFENSIVE_FAMILIES,
 } from "./matchEngine";
 import { allPassages, isMultiStage, getPassage, instantiateStageMoment } from "./passages";
-import { OUTCOME_EFFECTS, finalMatchRating } from "./ratingEngine";
+import { skillKindForChoice, buildSkillChallenge, scoreSkillInput, tierFromAccuracy } from "./skillEngine";
+import { OUTCOME_EFFECTS, finalMatchRating, ratingDeltaForOutcome } from "./ratingEngine";
 import { Rng, rng } from "./rng";
 import { clamp, clone, addStats, round1 } from "./util";
 import { getClub, clubLabel } from "./world";
@@ -281,6 +284,7 @@ export function resolvePlayerBeat(
   career: Career,
   state: MatchState,
   choiceId: string,
+  skillInput?: SkillInput,
 ): { state: MatchState; result: MatchMomentResult; beats: MatchBeat[]; continues: boolean } {
   const s = clone(state);
   const passage = s.pendingPassage;
@@ -292,10 +296,33 @@ export function resolvePlayerBeat(
   const choice = stage.choices.find((c) => c.id === choiceId) ?? stage.choices[0];
 
   const extraMod = s.momentum * 0.06 + s.matchConfidence * 0.08;
-  const base = resolveChoiceOutcome(career, s.context, moment, choice.id, {
-    fatigue: 100 - s.stamina,
-    extraMod,
-  });
+
+  // Marquee choices resolve via the player's skill input (when supplied);
+  // otherwise (and for non-skill choices) fall back to the seeded dice roll.
+  const skillKind = skillKindForChoice(choice);
+  let base: MatchMomentResult;
+  if (skillKind && skillInput) {
+    const challenge = buildSkillChallenge(career, s, choice.id);
+    const tier = challenge
+      ? tierFromAccuracy(scoreSkillInput(challenge, skillInput))
+      : "OK";
+    const outcome = outcomeForTier(choice, tier);
+    const eff0 = OUTCOME_EFFECTS[outcome];
+    base = {
+      moment,
+      choiceId: choice.id,
+      outcome,
+      tier,
+      ratingDelta: ratingDeltaForOutcome(outcome, tier),
+      statDeltas: { ...eff0.stats },
+      narrative: `${moment.minute}' — ${eff0.narrative}`,
+    };
+  } else {
+    base = resolveChoiceOutcome(career, s.context, moment, choice.id, {
+      fatigue: 100 - s.stamina,
+      extraMod,
+    });
+  }
 
   const payoff = contextualPayoff(base, situation, choice.risk);
   const eff = OUTCOME_EFFECTS[base.outcome];
