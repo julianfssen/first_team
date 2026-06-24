@@ -86,29 +86,45 @@ describe("screen rendering", () => {
     }
   });
 
-  it("AIM skill mini-game reports the tapped zone", () => {
-    const onComplete = vi.fn();
+  it("shot scene mounts with its aim/power UI", () => {
     render(
       <SkillChallengeView
-        challenge={{ kind: "AIM", forgiveness: 0.9, label: "Pick your spot", prompt: "p", zones: 5, keeperZones: [2] }}
-        onComplete={onComplete}
+        challenge={{ kind: "AIM", flavor: "SHOT", forgiveness: 0.8, label: "Strike!", prompt: "p", keeperCenter: 0.5, keeperWidth: 0.3 }}
+        onComplete={() => {}}
         onCancel={() => {}}
       />,
     );
-    fireEvent.click(screen.getAllByLabelText("corner")[0]);
-    expect(onComplete).toHaveBeenCalledWith({ value: 0 });
+    expect(screen.getByText("Strike!")).toBeTruthy();
+    expect(screen.getByText("Power")).toBeTruthy();
   });
 
-  it("TIMING skill mini-game reports a value on STOP", () => {
-    const onComplete = vi.fn();
+  it("timing scene reports a value when committed", () => {
+    vi.useFakeTimers();
+    try {
+      const onComplete = vi.fn();
+      render(
+        <SkillChallengeView
+          challenge={{ kind: "TIMING", flavor: "TACKLE", forgiveness: 0.6, label: "Time the tackle", prompt: "p", sweetCenter: 0.5, sweetWidth: 0.3 }}
+          onComplete={onComplete}
+          onCancel={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByText("SLIDE!"));
+      vi.advanceTimersByTime(700);
+      expect(onComplete).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("through-ball scene uses a play-it action", () => {
     render(
       <SkillChallengeView
-        challenge={{ kind: "TIMING", forgiveness: 0.6, label: "Time it", prompt: "p", sweetCenter: 0.5, sweetWidth: 0.3 }}
-        onComplete={onComplete}
+        challenge={{ kind: "RUN", flavor: "THROUGH_BALL", forgiveness: 0.6, label: "Lead the run", prompt: "p", sweetCenter: 0.5, sweetWidth: 0.3 }}
+        onComplete={() => {}}
         onCancel={() => {}}
       />,
     );
-    fireEvent.click(screen.getByText("STOP"));
-    expect(onComplete).toHaveBeenCalled();
+    expect(screen.getByText("PLAY IT!")).toBeTruthy();
   });
 });

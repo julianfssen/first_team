@@ -266,7 +266,9 @@ export function LiveMatch() {
                           <span className="font-semibold">
                             {choice.label}
                             {skill && (
-                              <span className="ml-2 text-[var(--accent)]">{skill === "AIM" ? "🎯" : "⏱"}</span>
+                              <span className="ml-2 text-[var(--accent)]">
+                                {skill === "AIM" ? "🎯" : skill === "RUN" ? "🅿️" : "⏱"}
+                              </span>
                             )}
                           </span>
                           <RiskBadge risk={choice.risk} />

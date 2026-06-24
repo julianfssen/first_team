@@ -430,27 +430,34 @@ export type ActivePassage = {
 // Skill flourishes (Stage 3): marquee choices trigger a quick skill mini-game.
 // ---------------------------------------------------------------------------
 
-/** AIM = pick-a-spot vs the keeper; TIMING = stop the sweeping marker. */
-export type SkillKind = "AIM" | "TIMING";
+/** AIM = aim + power (shot); TIMING = commit at the right instant; RUN = timed release. */
+export type SkillKind = "AIM" | "TIMING" | "RUN";
+
+/** The football action a challenge represents (drives which animated scene shows). */
+export type SkillFlavor = "SHOT" | "TACKLE" | "SAVE" | "THROUGH_BALL";
 
 /** Parameters for a skill mini-game, derived deterministically from competence. */
 export type SkillChallenge = {
   kind: SkillKind;
-  /** 0..1; higher = easier (bigger sweet zone / fewer covered shooting zones). */
+  flavor: SkillFlavor;
+  /** 0..1; higher = easier (wider gap past the keeper / bigger timing window). */
   forgiveness: number;
   label: string;
   prompt: string;
-  // AIM:
-  zones?: number;
-  /** Zone indices the keeper covers. */
-  keeperZones?: number[];
-  // TIMING:
-  sweetCenter?: number; // 0..1
-  sweetWidth?: number; // 0..1
+  // AIM (shot): the keeper covers a continuous band of the goal mouth (0..1).
+  keeperCenter?: number;
+  keeperWidth?: number;
+  // TIMING / RUN: a sweet window along a 0..1 track.
+  sweetCenter?: number;
+  sweetWidth?: number;
 };
 
-/** The player's raw input: AIM = chosen zone index; TIMING = stop position 0..1. */
-export type SkillInput = { value: number };
+/**
+ * The player's raw input.
+ * AIM: value = aim position across the goal (0..1), power = strike power (0..1).
+ * TIMING / RUN: value = the moment committed (0..1).
+ */
+export type SkillInput = { value: number; power?: number };
 
 /** A moment instantiated for a specific match. */
 export type MatchMoment = {
