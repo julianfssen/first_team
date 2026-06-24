@@ -77,28 +77,28 @@ export function buildSkillChallenge(
     let label: string, prompt: string;
     if (roll > 0.82) {
       shotType = "ONE_ON_ONE";
-      reachBase = 0.12 + fInv * 0.14;
-      reachGrow = 0.32; // the keeper smothers it FAST
-      powerFloor = 0.2;
-      windowMs = 1200;
+      reachBase = 0.1 + fInv * 0.12;
+      reachGrow = 0.2; // the keeper closes faster than normal
+      powerFloor = 0.15;
+      windowMs = 1900;
       label = "One-on-one!";
       prompt = "Keeper's rushing out — shoot early and pick your side.";
     } else if (roll > 0.64) {
       shotType = "LONG_RANGE";
-      reachBase = 0.18 + fInv * 0.16;
-      reachGrow = 0.12;
-      powerFloor = 0.55; // you need real power from distance
-      windowMs = 2000;
+      reachBase = 0.14 + fInv * 0.14;
+      reachGrow = 0.08;
+      powerFloor = 0.45; // you need real power from distance
+      windowMs = 2800;
       label = "From distance";
       prompt = "Long shot — you'll need real power to beat the keeper.";
     } else {
       shotType = "NORMAL";
-      reachBase = 0.15 + fInv * 0.16;
-      reachGrow = 0.18;
-      powerFloor = 0.25;
-      windowMs = 1700;
+      reachBase = 0.11 + fInv * 0.14;
+      reachGrow = 0.12;
+      powerFloor = 0.18;
+      windowMs = 2400;
       label = "Strike!";
-      prompt = "Beat the keeper to the corner before the gap shuts.";
+      prompt = "Beat the keeper to a corner before the gap shuts.";
     }
     return { kind, flavor, forgiveness, label, prompt, shotType, reachBase, reachGrow, powerFloor, windowMs };
   }
@@ -126,7 +126,7 @@ export function keeperReach(challenge: SkillChallenge, timing: number, power: nu
   const grow = challenge.reachGrow ?? 0.18;
   const t = clamp(timing, 0, 1);
   const p = clamp(power, 0, 1);
-  return clamp(base + grow * t + (1 - p) * 0.1, 0.06, 0.47);
+  return clamp(base + grow * t + (1 - p) * 0.06, 0.06, 0.45);
 }
 
 /** Score the player's raw input against the challenge → accuracy 0..1. */

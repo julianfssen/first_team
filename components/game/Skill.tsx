@@ -44,7 +44,8 @@ const ANCHOR = { x: 50, y: 58 };
 const GOAL_Y = 20;
 const MOUTH_L = 12;
 const MOUTH_R = 88;
-const MAX_PULL = 42;
+const AIM_RANGE = 64; // horizontal drag (svg units) to swing post-to-post
+const MAX_PULL_Y = 26; // downward pull for full power
 
 function ShotScene({ challenge, onComplete }: SceneProps) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -65,14 +66,12 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
   }
 
   function compute(p: { x: number; y: number }): { aim: number; power: number; crossX: number } {
-    const launch = { x: ANCHOR.x - p.x, y: ANCHOR.y - p.y };
-    const power = clamp(Math.hypot(launch.x, launch.y) / MAX_PULL, 0, 1);
-    let crossX = ANCHOR.x;
-    if (launch.y < -1) {
-      const k = (GOAL_Y - ANCHOR.y) / launch.y;
-      crossX = clamp(ANCHOR.x + launch.x * k, MOUTH_L, MOUTH_R);
-    }
-    const aim = clamp((crossX - MOUTH_L) / span, 0, 1);
+    // Decoupled & predictable: steer left/right to aim, pull back (down) for power.
+    const dx = p.x - ANCHOR.x;
+    const pullDown = Math.max(0, p.y - ANCHOR.y);
+    const aim = clamp(0.5 + dx / AIM_RANGE, 0, 1);
+    const power = clamp(pullDown / MAX_PULL_Y, 0, 1);
+    const crossX = MOUTH_L + aim * span;
     return {
       aim: Number.isFinite(aim) ? aim : 0.5,
       power: Number.isFinite(power) ? power : 0.4,
@@ -205,7 +204,7 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
         </div>
       </div>
       <p className="mt-1 text-center text-[10px] text-[var(--muted)]">
-        {shot ? "Struck!" : "Drag back, beat the keeper to a corner — hard, before the gap shuts"}
+        {shot ? "Struck!" : "Pull back for power, steer to a corner, release before the gap shuts"}
       </p>
     </div>
   );
