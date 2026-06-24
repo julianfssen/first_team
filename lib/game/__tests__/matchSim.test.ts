@@ -8,9 +8,11 @@ import {
   finalizeMatch,
   computeSituation,
   contextualPayoff,
+  shouldSubOff,
 } from "../matchSimEngine";
 import { allPassages, isMultiStage, getPassage } from "../passages";
-import type { Career, CreateCareerInput, MatchMomentResult, MatchState } from "../types";
+import { rng } from "../rng";
+import type { Career, CreateCareerInput, MatchContext, MatchMomentResult, MatchState } from "../types";
 
 const INPUT: CreateCareerInput = {
   name: "Sim Tester",
@@ -113,7 +115,7 @@ describe("multi-stage passages", () => {
     const template = getPassage(passageId)!;
     return {
       matchId: ctx.matchId, context: ctx, minute: 30, teamScore: 0, oppScore: 0,
-      momentum: 0, stamina: 100, matchConfidence: 0, onPitch: true,
+      momentum: 0, stamina: 100, matchConfidence: 0, onPitch: true, cameOnAsSub: false, exitMinute: null,
       plan: [], queueIndex: 0, momentResults: [],
       pendingPassage: { template, stageIndex: 0, importance: "MEDIUM", minute: 30, slotIndex: 1 },
       finished: false,
@@ -152,5 +154,63 @@ describe("multi-stage passages", () => {
     const c = createCareer(INPUT);
     const { beats } = driveMatch(c, 0);
     expect(beats.filter((b) => b.kind === "RESULT").length).toBeGreaterThan(0);
+  });
+});
+
+describe("substitutions", () => {
+  function ctxWith(career: Career, isStarter: boolean): MatchContext {
+    return { ...generateMatchContext(career), isStarter };
+  }
+  function baseState(career: Career, ctx: MatchContext, over: Partial<MatchState>): MatchState {
+    return {
+      matchId: ctx.matchId, context: ctx, minute: 80, teamScore: 0, oppScore: 0,
+      momentum: 0, stamina: 60, matchConfidence: 0, onPitch: true, cameOnAsSub: false,
+      exitMinute: null, plan: [], queueIndex: 0, momentResults: [], pendingPassage: null,
+      finished: false, ...over,
+    };
+  }
+  const badBeats = (n: number) => Array.from({ length: n }, () => ({ ratingDelta: -1 } as MatchMomentResult));
+
+  it("never hooks a player early or one playing well", () => {
+    const c = createCareer(INPUT);
+    const ctx = ctxWith(c, true);
+    // Too early.
+    expect(shouldSubOff(c, baseState(c, ctx, { minute: 50, stamina: 20, momentResults: badBeats(3) }), rng("a"))).toBe(false);
+    // Playing fine and fresh.
+    expect(shouldSubOff(c, baseState(c, ctx, { minute: 85, stamina: 90 }), rng("b"))).toBe(false);
+  });
+
+  it("can hook a poor, gassed player late", () => {
+    const c = createCareer(INPUT);
+    const ctx = ctxWith(c, true);
+    const bad = baseState(c, ctx, { minute: 85, stamina: 18, momentResults: badBeats(3) });
+    let fired = false;
+    for (let i = 0; i < 40 && !fired; i++) {
+      if (shouldSubOff(c, bad, rng(c.seed, "subtest", i))) fired = true;
+    }
+    expect(fired).toBe(true);
+  });
+
+  it("does not present player moments while off the pitch", () => {
+    const c = createCareer(INPUT);
+    const ctx = ctxWith(c, true);
+    const state = baseState(c, ctx, {
+      minute: 65, onPitch: false, exitMinute: 64,
+      plan: [{ kind: "PLAYER", minute: 70, templateId: "st-through-on-goal", importance: "MEDIUM" }],
+    });
+    const { beat } = advanceMatch(c, state);
+    expect(beat.kind).not.toBe("PLAYER");
+  });
+
+  it("finalize reports minutes for a hooked starter and an impact sub", () => {
+    const c = createCareer(INPUT);
+    const hooked = finalizeMatch(c, baseState(c, ctxWith(c, true), { minute: 90, onPitch: false, exitMinute: 70, finished: true }));
+    expect(hooked.subbedOff).toBe(true);
+    expect(hooked.minutesPlayed).toBe(70);
+
+    const sub = finalizeMatch(c, baseState(c, ctxWith(c, false), { minute: 90, cameOnAsSub: true, finished: true }));
+    expect(sub.cameOnAsSub).toBe(true);
+    expect(sub.subbedOff).toBe(false);
+    expect(sub.minutesPlayed).toBe(30); // came on at 60, played to 90
   });
 });

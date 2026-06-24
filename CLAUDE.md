@@ -94,8 +94,15 @@ is sometimes the wrong one). Built in stages:
   player's input resolves execution → tier → normal outcome pipeline. If no
   skill input is supplied it falls back to the RNG roll (back-compatible).
   Mini-games: `components/game/Skill.tsx`.
-- **Stage 4 — todo:** consequences & juice (substitution risk, confidence
-  streak surfacing, Moment-of-the-Match presentation, animation).
+- **Stage 4 — done:** consequences & juice. In-match **substitution risk**
+  (poor + gassed + low coach trust late → hooked early: moments skipped, fewer
+  minutes, coach-trust/morale hit) and the impact-sub reward; in-match
+  **confidence chip** (in the zone / rattled) in the HUD; **goal-flash** overlay
+  (`GoalBanner`); Post-Match **rating count-up** (`lib/ui/useCountUp.ts`) and an
+  emphasised Moment of the Match. `MatchResult` now carries `minutesPlayed`,
+  `subbedOff`, `cameOnAsSub`.
+
+The match redesign is complete — all four stages shipped.
 
 ## Status / what's stubbed for later
 

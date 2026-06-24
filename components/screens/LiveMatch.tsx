@@ -8,7 +8,29 @@ import { skillKindForChoice, buildSkillChallenge } from "@/lib/game/skillEngine"
 import { Button, ActionBar, Pill, cx } from "@/components/ui";
 import { RiskBadge } from "@/components/game/Cards";
 import { SkillChallengeView } from "@/components/game/Skill";
+import { GoalBanner } from "@/components/game/GoalBanner";
 import { outcomeIsPositive, pretty } from "@/lib/ui/format";
+
+/** A celebratory/grim flash for the most recent beat, if it warrants one. */
+function flashFor(beat: MatchBeat | undefined): { text: string; color: string } | null {
+  if (!beat) return null;
+  if (beat.kind === "NARRATED" && beat.scored === "TEAM") return { text: "GOAL!", color: "var(--accent)" };
+  if (beat.kind === "NARRATED" && beat.scored === "OPP") return { text: "CONCEDED", color: "var(--danger)" };
+  if (beat.kind === "RESULT") {
+    const o = beat.result?.outcome;
+    if (o === "GOAL") return { text: "GOAL!", color: "var(--accent)" };
+    if (o === "ASSIST") return { text: "ASSIST!", color: "var(--accent)" };
+    if (o === "PENALTY_SAVE") return { text: "PENALTY SAVED!", color: "var(--accent)" };
+    if (o === "SAVE") return { text: "SAVE!", color: "var(--accent)" };
+  }
+  return null;
+}
+
+function confidenceChip(matchConfidence: number): { text: string; color: string } | null {
+  if (matchConfidence >= 45) return { text: "🔥 In the zone", color: "var(--accent)" };
+  if (matchConfidence <= -45) return { text: "😰 Rattled", color: "var(--danger)" };
+  return null;
+}
 
 function MomentumBar({ momentum }: { momentum: number }) {
   const pct = Math.abs(momentum) / 2; // 0-50% from centre
@@ -130,9 +152,12 @@ export function LiveMatch() {
 
   const ctx = matchState.context;
   const score = `${matchState.teamScore}–${matchState.oppScore}`;
+  const flash = flashFor(feed[feed.length - 1]);
+  const confidence = confidenceChip(matchState.matchConfidence);
 
   return (
-    <div className="flex min-h-[100dvh] flex-col">
+    <div className="relative flex min-h-[100dvh] flex-col">
+      {flash && <GoalBanner key={feed[feed.length - 1]?.id} text={flash.text} color={flash.color} />}
       {/* Sticky HUD */}
       <div className="sticky top-0 z-10 space-y-2 border-b border-[var(--border)] bg-[var(--bg)]/95 px-4 pb-3 pt-4 backdrop-blur">
         <div className="flex items-center justify-between gap-2">
@@ -145,6 +170,7 @@ export function LiveMatch() {
           <span className="rounded-md bg-[var(--surface-2)] px-2 py-0.5 text-xs font-bold tabular-nums">
             {matchOver ? "FT" : `${matchState.minute}'`}
           </span>
+          {confidence && <Pill color={confidence.color}>{confidence.text}</Pill>}
         </div>
         <MomentumBar momentum={matchState.momentum} />
         <div className="flex items-center gap-2">
@@ -172,6 +198,16 @@ export function LiveMatch() {
             return (
               <div key={beat.id} className="my-3 text-center text-sm font-bold uppercase tracking-widest text-[var(--muted)]">
                 — Full Time —
+              </div>
+            );
+          }
+          if (beat.kind === "SUB") {
+            return (
+              <div key={beat.id} className="my-2 flex gap-2 rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 p-3">
+                <span className="text-sm">🔻</span>
+                <p className="text-sm font-semibold text-[var(--danger)]">
+                  {beat.minute}&apos; — {beat.text}
+                </p>
               </div>
             );
           }

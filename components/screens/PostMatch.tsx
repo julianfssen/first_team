@@ -2,10 +2,24 @@
 
 import { useGame } from "@/lib/store/gameStore";
 import { MatchScoreboard } from "@/components/game/Match";
-import { HeadlineCard, RatingPill } from "@/components/game/Cards";
+import { HeadlineCard } from "@/components/game/Cards";
 import { Button, ActionBar, Card, SectionTitle } from "@/components/ui";
 import type { SeasonStats, PlayerStatus } from "@/lib/game/types";
-import { STATUS_META } from "@/lib/ui/format";
+import { STATUS_META, ratingColor } from "@/lib/ui/format";
+import { useCountUp } from "@/lib/ui/useCountUp";
+
+function RatingReveal({ rating }: { rating: number }) {
+  const value = useCountUp(rating, 900);
+  const color = ratingColor(rating);
+  return (
+    <div className="flex flex-col items-center py-1">
+      <span className="text-[10px] uppercase tracking-widest text-[var(--muted)]">Your rating</span>
+      <span className="text-5xl font-black tabular-nums" style={{ color }}>
+        {value.toFixed(1)}
+      </span>
+    </div>
+  );
+}
 
 const STAT_LABELS: Partial<Record<keyof SeasonStats, string>> = {
   goals: "Goals", assists: "Assists", shots: "Shots", keyPasses: "Key Passes",
@@ -43,19 +57,22 @@ export function PostMatch() {
           clubId={career.clubId}
         />
 
-        <div className="flex items-center justify-center gap-3 py-1">
-          <span className="text-sm text-[var(--muted)]">Your rating</span>
-          <span className="animate-pop">
-            <RatingPill rating={result.rating} />
-          </span>
-        </div>
+        <RatingReveal rating={result.rating} />
+
+        {(result.subbedOff || result.cameOnAsSub) && (
+          <p className="text-center text-xs text-[var(--muted)]">
+            {result.subbedOff
+              ? `🔻 Substituted — you played ${result.minutesPlayed}'`
+              : `🔺 Came off the bench — ${result.minutesPlayed}' played`}
+          </p>
+        )}
 
         <HeadlineCard headline={result.headline} />
 
         {result.momentOfMatch && (
-          <Card>
-            <SectionTitle>Moment of the Match</SectionTitle>
-            <p className="text-sm text-[var(--text)]/90">{result.momentOfMatch}</p>
+          <Card className="border-[var(--accent)]/40">
+            <SectionTitle>⭐ Moment of the Match</SectionTitle>
+            <p className="text-[15px] font-medium text-[var(--text)]/90">{result.momentOfMatch}</p>
           </Card>
         )}
 

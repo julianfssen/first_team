@@ -505,6 +505,11 @@ export type MatchResult = {
   injury?: Injury;
   /** "Moment of the match" narrative, if one stood out. */
   momentOfMatch?: string;
+  /** Minutes the player actually featured. */
+  minutesPlayed: number;
+  /** True if the manager hooked the player early. */
+  subbedOff: boolean;
+  cameOnAsSub: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -514,7 +519,7 @@ export type MatchResult = {
 /** How the live match state frames the player's next decision. */
 export type MatchSituation = "NEUTRAL" | "CHASING" | "CHASING_HARD" | "PROTECTING";
 
-export type MatchBeatKind = "NARRATED" | "PLAYER" | "RESULT" | "FULL_TIME";
+export type MatchBeatKind = "NARRATED" | "PLAYER" | "RESULT" | "FULL_TIME" | "SUB";
 
 /** One entry in the live match feed. */
 export type MatchBeat = {
@@ -558,6 +563,10 @@ export type MatchState = {
   /** In-match confidence streak -100..100, layered on career confidence. */
   matchConfidence: number;
   onPitch: boolean;
+  /** True if the player came on from the bench rather than starting. */
+  cameOnAsSub: boolean;
+  /** Minute the player left the pitch (subbed off), or null if they saw it out. */
+  exitMinute: number | null;
   plan: PlannedSlot[];
   queueIndex: number;
   momentResults: MatchMomentResult[];

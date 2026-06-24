@@ -28,7 +28,7 @@ function shotState(career: Career): MatchState {
   const template = getPassage("st-through-on-goal")!;
   return {
     matchId: ctx.matchId, context: ctx, minute: 30, teamScore: 0, oppScore: 0,
-    momentum: 0, stamina: 100, matchConfidence: 0, onPitch: true,
+    momentum: 0, stamina: 100, matchConfidence: 0, onPitch: true, cameOnAsSub: false, exitMinute: null,
     plan: [], queueIndex: 0, momentResults: [],
     pendingPassage: { template, stageIndex: 0, importance: "HIGH", minute: 30, slotIndex: 1 },
     finished: false,

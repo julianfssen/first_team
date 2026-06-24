@@ -44,6 +44,7 @@ import { OUTCOME_EFFECTS, finalMatchRating, ratingDeltaForOutcome } from "./rati
 import { Rng, rng } from "./rng";
 import { clamp, clone, addStats, round1 } from "./util";
 import { getClub, clubLabel } from "./world";
+import { hasTrait } from "./effects";
 import { injuryProbability, rollSeverity, createInjury, isInjured } from "./injuryEngine";
 
 const MOMENTUM_DECAY = 6;
@@ -105,12 +106,43 @@ export function startMatch(career: Career, ctx: MatchContext): MatchState {
     stamina: clamp(100 - career.status.fatigue * 0.5, 45, 100),
     matchConfidence: 0,
     onPitch: true,
+    cameOnAsSub: !ctx.isStarter,
+    exitMinute: null,
     plan,
     queueIndex: 0,
     momentResults: [],
     pendingPassage: null,
     finished: false,
   };
+}
+
+/** Running match rating from the beats resolved so far. */
+export function currentRating(state: MatchState): number {
+  let r = 6.0;
+  for (const mr of state.momentResults) r += mr.ratingDelta;
+  return clamp(r, 3, 10);
+}
+
+/**
+ * Should the manager hook the player at this narrated beat? Gated to a genuinely
+ * poor or exhausted late-game performance, then a probability roll.
+ */
+export function shouldSubOff(career: Career, state: MatchState, r: Rng): boolean {
+  if (!state.onPitch || state.minute < 62) return false;
+  const rating = currentRating(state);
+  const gassed = state.stamina < 35;
+  const poor = rating < 5.8;
+  if (!gassed && !poor) return false;
+  // Impact subs who are doing well don't get hooked again.
+  if (state.cameOnAsSub && rating >= 6.2) return false;
+
+  let p = 0;
+  if (poor) p += (6 - rating) * 0.06;
+  if (gassed) p += (40 - state.stamina) * 0.004;
+  if (career.status.coachTrust < 45) p += (45 - career.status.coachTrust) * 0.003;
+  p += ((state.minute - 60) / 30) * 0.04;
+  if (hasTrait(career, "PROFESSIONAL")) p -= 0.02;
+  return r.chance(clamp(p, 0, 0.5));
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +229,13 @@ export function advanceMatch(career: Career, state: MatchState): { state: MatchS
   s.minute = slot.minute;
   decayMomentum(s);
 
-  if (slot.kind === "PLAYER" && slot.templateId) {
+  // A benched player comes on early in the second half (their first moment).
+  if (slot.kind === "PLAYER" && s.cameOnAsSub && s.exitMinute === null && !s.momentResults.length && s.minute < 46) {
+    s.minute = Math.max(s.minute, 60);
+  }
+
+  // The player only gets moments while on the pitch.
+  if (slot.kind === "PLAYER" && slot.templateId && s.onPitch) {
     const template = getPassage(slot.templateId);
     if (template) {
       const passage = {
@@ -221,6 +259,19 @@ export function advanceMatch(career: Career, state: MatchState): { state: MatchS
         },
       };
     }
+  }
+
+  // Sub-off check (only on non-player beats, so we never preempt a moment).
+  const subRng = rng(career.seed, "sub", s.matchId, s.queueIndex);
+  if (shouldSubOff(career, s, subRng)) {
+    s.onPitch = false;
+    s.exitMinute = s.minute;
+    const rating = currentRating(s);
+    const text =
+      rating < 5.5
+        ? "You're hooked — the manager has seen enough."
+        : "Your number's up — you're taken off to save your legs.";
+    return { state: s, beat: { id: `${s.matchId}-sub${s.queueIndex}`, kind: "SUB", minute: s.minute, text, tone: "NEGATIVE" } };
   }
 
   const r = rng(career.seed, "narrate", s.matchId, s.queueIndex);
@@ -423,7 +474,13 @@ export function finalizeMatch(career: Career, state: MatchState): MatchResult {
     injury = createInjury(career, rollSeverity(career, state.matchId));
   }
 
-  const fatigueAdd = (ctx.isStarter ? 16 : 8) + (intensity - 1) * 12;
+  // Minutes & substitution consequences.
+  const subbedOff = state.exitMinute !== null;
+  const onMinute = ctx.isStarter ? 0 : 60;
+  const minutesPlayed = clamp((state.exitMinute ?? 90) - onMinute, 5, 90);
+  // A starter hooked early gets less of a fatigue load.
+  const fatigueAdd = ((ctx.isStarter ? 16 : 8) + (intensity - 1) * 12) * (minutesPlayed / 90 + 0.3);
+
   const statusDeltas: Partial<PlayerStatus> = {
     fatigue: Math.round(fatigueAdd),
     form: clamp((rating - 6.5) * 4, -12, 14),
@@ -435,6 +492,15 @@ export function finalizeMatch(career: Career, state: MatchState): MatchResult {
       (ctx.importance === "CLUTCH" ? 1.6 : ctx.importance === "HIGH" ? 1.3 : 1),
     mediaPressure: ctx.importance === "CLUTCH" ? 4 : ctx.importance === "HIGH" ? 2 : 0,
   };
+  // Being hooked for a poor showing stings extra.
+  if (subbedOff && rating < 6) {
+    statusDeltas.coachTrust = (statusDeltas.coachTrust ?? 0) - 4;
+    statusDeltas.morale = (statusDeltas.morale ?? 0) - 4;
+  }
+  // An impact sub who shone earns a reputation bump.
+  if (state.cameOnAsSub && !subbedOff && rating >= 7.2) {
+    statusDeltas.reputation = (statusDeltas.reputation ?? 0) + 3;
+  }
 
   const tone: "POSITIVE" | "NEUTRAL" | "NEGATIVE" =
     rating >= 7.3 || matchGoals > 0 ? "POSITIVE" : rating <= 5.3 ? "NEGATIVE" : "NEUTRAL";
@@ -463,5 +529,8 @@ export function finalizeMatch(career: Career, state: MatchState): MatchResult {
     headline,
     injury,
     momentOfMatch: standout?.narrative,
+    minutesPlayed,
+    subbedOff,
+    cameOnAsSub: state.cameOnAsSub,
   };
 }

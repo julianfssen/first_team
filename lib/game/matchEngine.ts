@@ -441,6 +441,9 @@ export function finishMatch(
     statusDeltas,
     headline,
     injury,
+    minutesPlayed: ctx.isStarter ? FULL_MATCH_MINUTES : 25,
+    subbedOff: false,
+    cameOnAsSub: !ctx.isStarter,
   };
 }
 
@@ -470,8 +473,8 @@ export function applyMatchResult(career: Career, result: MatchResult): Career {
     pushTimeline(c, "DEBUT", `Made competitive debut for ${clubLabel(c.clubId)}.`);
   }
 
-  // Appearance bookkeeping.
-  const minutes = ctx.isStarter ? FULL_MATCH_MINUTES : rng(c.seed, "minutes", ctx.matchId).int(15, 35);
+  // Appearance bookkeeping (minutes come from the live sim's substitution logic).
+  const minutes = result.minutesPlayed ?? (ctx.isStarter ? FULL_MATCH_MINUTES : 25);
   c.seasonStats.appearances += 1;
   if (ctx.isStarter) c.seasonStats.starts += 1;
   c.seasonStats.minutes += minutes;
