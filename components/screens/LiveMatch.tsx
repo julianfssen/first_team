@@ -119,7 +119,6 @@ export function LiveMatch() {
 
   const ctx = matchState.context;
   const score = `${matchState.teamScore}–${matchState.oppScore}`;
-  const pending = matchState.pendingMoment;
 
   return (
     <div className="flex min-h-[100dvh] flex-col">
@@ -166,14 +165,24 @@ export function LiveMatch() {
             );
           }
           // PLAYER beat: prompt (+ choices if it's the active decision).
-          const active = awaitingChoice && i === feed.length - 1 && pending;
+          const active = awaitingChoice && i === feed.length - 1;
           const moment = beat.moment;
           if (!moment) return null;
           return (
-            <div key={beat.id} className="my-2 rounded-2xl border border-[var(--accent)]/30 bg-[var(--surface)] p-4">
+            <div
+              key={beat.id}
+              className={cx(
+                "my-2 rounded-2xl border bg-[var(--surface)] p-4",
+                beat.continuation ? "border-[var(--accent)]/20 ml-4" : "border-[var(--accent)]/30",
+              )}
+            >
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-xs font-bold tabular-nums text-[var(--accent)]">⚡ {moment.minute}&apos;</span>
-                <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">Your moment</span>
+                <span className="text-xs font-bold tabular-nums text-[var(--accent)]">
+                  {beat.continuation ? "▸" : "⚡"} {moment.minute}&apos;
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+                  {beat.continuation ? "The move continues" : "Your moment"}
+                </span>
               </div>
               <h3 className="text-base font-bold">{moment.title}</h3>
               <p className="mt-0.5 text-sm text-[var(--text)]/85">{moment.description}</p>

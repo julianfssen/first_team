@@ -52,9 +52,10 @@ function playOneWeek() {
   while (!s().matchOver) {
     if (guard++ > 500) throw new Error("live match did not terminate");
     if (s().awaitingChoice) {
-      const moment = s().matchState!.pendingMoment!;
+      // The active decision is the latest PLAYER beat in the feed.
+      const feed = s().feed;
+      const moment = feed[feed.length - 1].moment!;
       s().resolveLiveChoice(moment.choices[0].id);
-      expect(s().awaitingChoice).toBe(false);
     } else {
       s().advanceOne();
     }

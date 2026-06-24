@@ -24,6 +24,7 @@ lib/game/        Pure engine (deterministic, seeded RNG, no React/DOM)
   eventEngine.ts   Story events: eligibility, weighted pick, applyEventChoice
   matchEngine.ts   Context, moment templates, shared resolveChoiceOutcome core, applyMatchResult, commitWeek
   matchSimEngine.ts "Living Match": startMatch → advanceMatch (beats) → resolvePlayerBeat → finalizeMatch; momentum/stamina/in-match confidence + contextual payoff (safe is sometimes wrong)
+  passages.ts      Multi-stage passage pool: wraps single moments, walks stages (ADVANCE/FINISH/END)
   ratingEngine.ts  OUTCOME_EFFECTS table (rating + stat deltas per outcome) + match rating
   progressionEngine.ts  Training growth (age-gated, diminishing returns)
   agingEngine.ts   End-of-season aging (physical decline / mental growth)
@@ -37,8 +38,9 @@ lib/game/        Pure engine (deterministic, seeded RNG, no React/DOM)
   schemas.ts       Zod schemas for save validation
 
 data/            Static fictional content (plain TS, no logic)
-  regions, leagues, clubs (~100), matchMoments (~63 templates),
-  traits (27), events (59), headlines (32), commentary (narration lines)
+  regions, leagues, clubs (~100), matchMoments (~63 single templates),
+  passages (~21 multi-stage), traits (27), events (59), headlines (32),
+  commentary (narration lines)
 
 lib/store/gameStore.ts   Zustand store = screen state machine bridging engine ↔ UI
 lib/ui/format.ts         Label maps + colour helpers
@@ -79,7 +81,11 @@ moments embedded with live context, and **contextual payoff** (the safe option
 is sometimes the wrong one). Built in stages:
 
 - **Stage 1 — done:** living timeline + live state + contextual payoff.
-- **Stage 2 — todo:** multi-beat passages (a moment = 2–3 chained beats).
+- **Stage 2 — done:** multi-beat passages. A "moment" is a `MomentPassageTemplate`
+  of 1+ stages; each choice has a `flow` (ADVANCE carries the move on if it
+  succeeds, FINISH/END close it out). Single moments are wrapped as 1-stage
+  passages (`lib/game/passages.ts`); genuine multi-stage ones live in
+  `data/passages.ts` (~21, ≥3 per family) and are biased to appear on big moments.
 - **Stage 3 — todo:** stat-gated skill flourishes on marquee beats (shot
   pick-a-corner, penalty timing, 1v1 read, last-ditch tackle).
 - **Stage 4 — todo:** consequences & juice (substitution risk, confidence

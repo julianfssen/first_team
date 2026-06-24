@@ -390,6 +390,42 @@ export type MatchMomentTemplate = {
   choices: MatchMomentChoiceTemplate[];
 };
 
+// ---------------------------------------------------------------------------
+// Passages (Stage 2): a "moment" is one or more chained decision stages.
+// ---------------------------------------------------------------------------
+
+/**
+ * What happens after a choice resolves:
+ * - ADVANCE: success/partial carries the move to the next stage; failure ends
+ *   the passage early (a turnover).
+ * - FINISH: this choice ends the passage (a shot, clearance, final ball).
+ * - END: always ends the passage (you abort / recycle / play it safe).
+ */
+export type PassageFlow = "ADVANCE" | "FINISH" | "END";
+
+export type PassageChoice = MatchMomentChoiceTemplate & { flow: PassageFlow };
+
+export type PassageStage = {
+  title: string;
+  description: string;
+  choices: PassageChoice[];
+};
+
+export type MomentPassageTemplate = {
+  id: string;
+  positionFamilies: PositionFamily[];
+  stages: PassageStage[];
+};
+
+/** A passage in progress within a live match. */
+export type ActivePassage = {
+  template: MomentPassageTemplate;
+  stageIndex: number;
+  importance: MatchImportance;
+  minute: number;
+  slotIndex: number;
+};
+
 /** A moment instantiated for a specific match. */
 export type MatchMoment = {
   id: string;
@@ -467,6 +503,8 @@ export type MatchBeat = {
   moment?: MatchMoment;
   /** For PLAYER beats: how the live state frames the decision. */
   situation?: MatchSituation;
+  /** For PLAYER beats: true if this is a follow-on stage of an ongoing passage. */
+  continuation?: boolean;
   /** For RESULT beats: the resolved outcome + any contextual note. */
   result?: MatchMomentResult;
   contextNote?: string;
@@ -497,8 +535,8 @@ export type MatchState = {
   plan: PlannedSlot[];
   queueIndex: number;
   momentResults: MatchMomentResult[];
-  /** The moment currently awaiting the player's choice, if any. */
-  pendingMoment: MatchMoment | null;
+  /** The passage currently awaiting the player's choice, if any. */
+  pendingPassage: ActivePassage | null;
   finished: boolean;
 };
 

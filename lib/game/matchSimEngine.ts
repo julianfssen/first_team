@@ -29,16 +29,14 @@ import type {
   Risk,
   SeasonStats,
 } from "./types";
-import { MATCH_MOMENTS } from "@/data/matchMoments";
 import { COMMENTARY } from "@/data/commentary";
 import {
   resolveChoiceOutcome,
-  instantiateMoment,
-  templatesForFamily,
   MOMENT_COUNT_BY_IMPORTANCE,
   pickHeadline,
   DEFENSIVE_FAMILIES,
 } from "./matchEngine";
+import { allPassages, isMultiStage, getPassage, instantiateStageMoment } from "./passages";
 import { OUTCOME_EFFECTS, finalMatchRating } from "./ratingEngine";
 import { Rng, rng } from "./rng";
 import { clamp, clone, addStats, round1 } from "./util";
@@ -46,7 +44,6 @@ import { getClub, clubLabel } from "./world";
 import { injuryProbability, rollSeverity, createInjury, isInjured } from "./injuryEngine";
 
 const MOMENTUM_DECAY = 6;
-const TEMPLATE_BY_ID = new Map(MATCH_MOMENTS.map((t) => [t.id, t]));
 
 // ---------------------------------------------------------------------------
 // Kickoff: build the match skeleton
@@ -54,28 +51,39 @@ const TEMPLATE_BY_ID = new Map(MATCH_MOMENTS.map((t) => [t.id, t]));
 
 export function startMatch(career: Career, ctx: MatchContext): MatchState {
   const r = rng(career.seed, "sim", ctx.matchId);
-  const pool = templatesForFamily(career.positionFamily);
+  const pool = allPassages(career.positionFamily);
+  const multiPool = pool.filter(isMultiStage);
 
   const [lo, hi] = MOMENT_COUNT_BY_IMPORTANCE[ctx.importance];
   let playerCount = Math.min(r.int(lo, hi), pool.length);
   if (!ctx.isStarter) playerCount = Math.max(1, playerCount - 1);
 
-  const chosen = r.sample(pool, playerCount);
   const earliest = ctx.isStarter ? 5 : 58;
+  const used = new Set<string>();
 
-  // Player-moment minutes, spread and ascending.
-  const playerMinutes = chosen
-    .map(() => r.int(earliest, 89))
-    .sort((a, b) => a - b);
-
-  const plan: PlannedSlot[] = chosen.map((tpl, i) => {
-    const isLast = i === chosen.length - 1;
+  const plan: PlannedSlot[] = [];
+  for (let i = 0; i < playerCount; i++) {
+    const isLast = i === playerCount - 1;
     const importance: MatchImportance =
       isLast && (ctx.importance === "HIGH" || ctx.importance === "CLUTCH")
         ? "CLUTCH"
         : ctx.importance;
-    return { kind: "PLAYER", minute: playerMinutes[i], templateId: tpl.id, importance };
-  });
+
+    // Bias the bigger moments toward richer, multi-stage passages.
+    const big = importance === "HIGH" || importance === "CLUTCH";
+    const wantMulti = multiPool.length > 0 && r.chance(big ? 0.75 : 0.3);
+    const source = wantMulti ? multiPool : pool;
+    const fresh = source.filter((p) => !used.has(p.id));
+    const passage = (fresh.length > 0 ? r.pick(fresh) : r.pick(source));
+    used.add(passage.id);
+
+    plan.push({
+      kind: "PLAYER",
+      minute: r.int(earliest, 89),
+      templateId: passage.id,
+      importance,
+    });
+  }
 
   // Narrated beats fill the rest of the timeline.
   const narratedCount = r.int(6, 9);
@@ -97,7 +105,7 @@ export function startMatch(career: Career, ctx: MatchContext): MatchState {
     plan,
     queueIndex: 0,
     momentResults: [],
-    pendingMoment: null,
+    pendingPassage: null,
     finished: false,
   };
 }
@@ -187,10 +195,17 @@ export function advanceMatch(career: Career, state: MatchState): { state: MatchS
   decayMomentum(s);
 
   if (slot.kind === "PLAYER" && slot.templateId) {
-    const template = TEMPLATE_BY_ID.get(slot.templateId);
+    const template = getPassage(slot.templateId);
     if (template) {
-      const moment = instantiateMoment(s.matchId, template, slot.minute, slot.importance, s.queueIndex);
-      s.pendingMoment = moment;
+      const passage = {
+        template,
+        stageIndex: 0,
+        importance: slot.importance,
+        minute: slot.minute,
+        slotIndex: s.queueIndex,
+      };
+      s.pendingPassage = passage;
+      const moment = instantiateStageMoment(s.matchId, passage);
       return {
         state: s,
         beat: {
@@ -199,6 +214,7 @@ export function advanceMatch(career: Career, state: MatchState): { state: MatchS
           minute: slot.minute,
           moment,
           situation: computeSituation(s),
+          continuation: false,
         },
       };
     }
@@ -254,18 +270,26 @@ function staminaCost(risk: Risk): number {
   return (risk === "HIGH" ? 8 : risk === "MEDIUM" ? 5 : 3) + 2;
 }
 
-/** Resolve the pending player moment with the player's choice. */
+const NON_FAILURE = new Set(["GREAT", "GOOD", "OK"]);
+
+/**
+ * Resolve the current stage of the pending passage. If the chosen option's flow
+ * is ADVANCE and it succeeds (and a further stage exists), the passage carries
+ * on — returning the next stage as a follow-on PLAYER beat. Otherwise it ends.
+ */
 export function resolvePlayerBeat(
   career: Career,
   state: MatchState,
   choiceId: string,
-): { state: MatchState; result: MatchMomentResult; beat: MatchBeat } {
+): { state: MatchState; result: MatchMomentResult; beats: MatchBeat[]; continues: boolean } {
   const s = clone(state);
-  const moment = s.pendingMoment;
-  if (!moment) throw new Error("No pending moment to resolve.");
+  const passage = s.pendingPassage;
+  if (!passage) throw new Error("No pending passage to resolve.");
 
+  const moment = instantiateStageMoment(s.matchId, passage);
+  const stage = passage.template.stages[passage.stageIndex];
   const situation = computeSituation(s);
-  const choice = moment.choices.find((c) => c.id === choiceId) ?? moment.choices[0];
+  const choice = stage.choices.find((c) => c.id === choiceId) ?? stage.choices[0];
 
   const extraMod = s.momentum * 0.06 + s.matchConfidence * 0.08;
   const base = resolveChoiceOutcome(career, s.context, moment, choice.id, {
@@ -296,9 +320,8 @@ export function resolvePlayerBeat(
     ratingDelta: round1(base.ratingDelta + payoff.ratingDelta),
   };
   s.momentResults.push(result);
-  s.pendingMoment = null;
 
-  const beat: MatchBeat = {
+  const resultBeat: MatchBeat = {
     id: `${s.matchId}-r${s.momentResults.length}`,
     kind: "RESULT",
     minute: moment.minute,
@@ -307,7 +330,29 @@ export function resolvePlayerBeat(
     contextNote: payoff.note,
     tone: eff.positive ? "POSITIVE" : "NEGATIVE",
   };
-  return { state: s, result, beat };
+
+  // Does the passage carry on?
+  const hasNext = passage.stageIndex + 1 < passage.template.stages.length;
+  const continues = choice.flow === "ADVANCE" && NON_FAILURE.has(base.tier) && hasNext;
+
+  const beats: MatchBeat[] = [resultBeat];
+  if (continues) {
+    passage.stageIndex += 1;
+    s.pendingPassage = passage;
+    const nextMoment = instantiateStageMoment(s.matchId, passage);
+    beats.push({
+      id: `${s.matchId}-p${passage.slotIndex}-s${passage.stageIndex}`,
+      kind: "PLAYER",
+      minute: passage.minute,
+      moment: nextMoment,
+      situation: computeSituation(s),
+      continuation: true,
+    });
+  } else {
+    s.pendingPassage = null;
+  }
+
+  return { state: s, result, beats, continues };
 }
 
 // ---------------------------------------------------------------------------

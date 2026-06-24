@@ -243,8 +243,9 @@ export const useGame = create<GameState>((set, get) => {
     resolveLiveChoice: (choiceId) => {
       const { career, matchState } = get();
       if (!career || !matchState) return;
-      const { state, beat } = resolvePlayerBeat(career, matchState, choiceId);
-      set({ matchState: state, feed: [...get().feed, beat], awaitingChoice: false });
+      const { state, beats } = resolvePlayerBeat(career, matchState, choiceId);
+      // The passage may carry on (ADVANCE on success) — keep awaiting input then.
+      set({ matchState: state, feed: [...get().feed, ...beats], awaitingChoice: state.pendingPassage != null });
     },
 
     finishLiveMatch: () => {

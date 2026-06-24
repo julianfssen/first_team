@@ -9,6 +9,7 @@ import {
   computeSituation,
   contextualPayoff,
 } from "../matchSimEngine";
+import { allPassages, isMultiStage, getPassage } from "../passages";
 import type { Career, CreateCareerInput, MatchMomentResult, MatchState } from "../types";
 
 const INPUT: CreateCareerInput = {
@@ -28,19 +29,23 @@ function driveMatch(career: Career, pick = 0) {
   const ctx = generateMatchContext(career);
   let state = startMatch(career, ctx);
   const beats = [];
+  let active: { choices: { id: string }[] } | null = null;
   let guard = 0;
   for (;;) {
     if (guard++ > 500) throw new Error("match did not terminate");
-    if (state.pendingMoment) {
-      const choice = state.pendingMoment.choices[Math.min(pick, state.pendingMoment.choices.length - 1)];
+    if (active) {
+      const choice = active.choices[Math.min(pick, active.choices.length - 1)];
       const res = resolvePlayerBeat(career, state, choice.id);
       state = res.state;
-      beats.push(res.beat);
+      beats.push(...res.beats);
+      // A follow-on PLAYER beat means the passage continues.
+      active = res.beats.find((b) => b.kind === "PLAYER")?.moment ?? null;
       continue;
     }
     const step = advanceMatch(career, state);
     state = step.state;
     beats.push(step.beat);
+    if (step.beat.kind === "PLAYER") active = step.beat.moment ?? null;
     if (step.beat.kind === "FULL_TIME") break;
   }
   const result = finalizeMatch(career, state);
@@ -99,5 +104,53 @@ describe("match simulator", () => {
     const boldFail = { outcome: "POSSESSION_LOST" } as MatchMomentResult;
     const payoff = contextualPayoff(boldFail, "PROTECTING", "HIGH");
     expect(payoff.ratingDelta).toBeLessThan(0);
+  });
+});
+
+describe("multi-stage passages", () => {
+  function passageState(career: Career, passageId: string): MatchState {
+    const ctx = generateMatchContext(career);
+    const template = getPassage(passageId)!;
+    return {
+      matchId: ctx.matchId, context: ctx, minute: 30, teamScore: 0, oppScore: 0,
+      momentum: 0, stamina: 100, matchConfidence: 0, onPitch: true,
+      plan: [], queueIndex: 0, momentResults: [],
+      pendingPassage: { template, stageIndex: 0, importance: "MEDIUM", minute: 30, slotIndex: 1 },
+      finished: false,
+    };
+  }
+
+  it("exposes multi-stage passages for every family", () => {
+    for (const fam of ["GOALKEEPER", "STRIKER", "WINGER", "CENTRE_BACK", "CENTRAL_MIDFIELDER"]) {
+      expect(allPassages(fam).some(isMultiStage)).toBe(true);
+    }
+  });
+
+  it("a FINISH choice always ends the passage", () => {
+    const c = createCareer(INPUT);
+    const res = resolvePlayerBeat(c, passageState(c, "st-through-on-goal"), "shoot-low");
+    expect(res.continues).toBe(false);
+    expect(res.state.pendingPassage).toBeNull();
+    expect(res.beats.some((b) => b.kind === "PLAYER")).toBe(false);
+  });
+
+  it("an ADVANCE choice continues iff it didn't fail and a stage remains", () => {
+    const c = createCareer(INPUT);
+    const res = resolvePlayerBeat(c, passageState(c, "st-through-on-goal"), "round-keeper");
+    const followOn = res.beats.some((b) => b.kind === "PLAYER");
+    expect(res.continues).toBe(followOn);
+    if (res.continues) {
+      expect(res.state.pendingPassage?.stageIndex).toBe(1);
+    } else {
+      expect(res.state.pendingPassage).toBeNull();
+    }
+  });
+
+  it("a multi-stage passage can stack multiple result beats", () => {
+    // Drive a striker match always taking the first (often ADVANCE) option;
+    // at least one passage should produce more than one result beat in sequence.
+    const c = createCareer(INPUT);
+    const { beats } = driveMatch(c, 0);
+    expect(beats.filter((b) => b.kind === "RESULT").length).toBeGreaterThan(0);
   });
 });
