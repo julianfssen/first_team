@@ -22,7 +22,8 @@ lib/game/        Pure engine (deterministic, seeded RNG, no React/DOM)
   createCareer.ts  Player creation
   weeklyEngine.ts  advanceWeek (training/recovery; does NOT advance the counter)
   eventEngine.ts   Story events: eligibility, weighted pick, applyEventChoice
-  matchEngine.ts   Context → moments → resolveMatchMoment → finishMatch → applyMatchResult → commitWeek
+  matchEngine.ts   Context, moment templates, shared resolveChoiceOutcome core, applyMatchResult, commitWeek
+  matchSimEngine.ts "Living Match": startMatch → advanceMatch (beats) → resolvePlayerBeat → finalizeMatch; momentum/stamina/in-match confidence + contextual payoff (safe is sometimes wrong)
   ratingEngine.ts  OUTCOME_EFFECTS table (rating + stat deltas per outcome) + match rating
   progressionEngine.ts  Training growth (age-gated, diminishing returns)
   agingEngine.ts   End-of-season aging (physical decline / mental growth)
@@ -37,7 +38,7 @@ lib/game/        Pure engine (deterministic, seeded RNG, no React/DOM)
 
 data/            Static fictional content (plain TS, no logic)
   regions, leagues, clubs (~100), matchMoments (~63 templates),
-  traits (27), events (59), headlines (32)
+  traits (27), events (59), headlines (32), commentary (narration lines)
 
 lib/store/gameStore.ts   Zustand store = screen state machine bridging engine ↔ UI
 lib/ui/format.ts         Label maps + colour helpers
@@ -69,14 +70,29 @@ It's all data — append to the relevant file in `data/` and it's picked up:
 - New events → `data/events.ts` (conditions/phases gate eligibility; effects are `GameEffect[]`).
 - New clubs/leagues → `data/clubs.ts` / `data/leagues.ts` (keep `leagueId` valid).
 
-## V1 status / what's stubbed for later
+## Match redesign ("Living Match")
 
-Implemented end-to-end: creation, weekly loop, position-specific match moments,
-ratings/stats, progression, traits, story events, injuries, transfers across
-regions, aging + phases, season recaps, a light national-team system, retirement
-+ legacy recap, local saves.
+The match is a continuous simulated timeline (`matchSimEngine` + `LiveMatch`
+screen), not a slideshow: a beat feed with a sticky HUD (score · clock ·
+momentum · stamina), the scoreline evolving via narrated beats, the player's
+moments embedded with live context, and **contextual payoff** (the safe option
+is sometimes the wrong one). Built in stages:
 
-Lighter/for V2: national team is auto-resolved at season end (no playable
+- **Stage 1 — done:** living timeline + live state + contextual payoff.
+- **Stage 2 — todo:** multi-beat passages (a moment = 2–3 chained beats).
+- **Stage 3 — todo:** stat-gated skill flourishes on marquee beats (shot
+  pick-a-corner, penalty timing, 1v1 read, last-ditch tackle).
+- **Stage 4 — todo:** consequences & juice (substitution risk, confidence
+  streak surfacing, Moment-of-the-Match presentation, animation).
+
+## Status / what's stubbed for later
+
+Implemented end-to-end: creation, weekly loop, the Living Match, ratings/stats,
+progression, traits, story events, injuries, transfers across regions, aging +
+phases, season recaps, a light national-team system, retirement + legacy recap,
+local saves.
+
+Lighter/for later: national team is auto-resolved at season end (no playable
 international matches yet); position changes exist in the engine
 (`changePosition`) but aren't yet surfaced via a dedicated UI flow (hook them to
 a POSITION_CHANGE event); manual multi-slot save UI is minimal (autosave + quick

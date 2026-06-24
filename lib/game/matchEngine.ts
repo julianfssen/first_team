@@ -38,7 +38,7 @@ import { pushTimeline } from "./timeline";
 import { injuryProbability, rollSeverity, createInjury, isInjured } from "./injuryEngine";
 import { FULL_MATCH_MINUTES, SEASON_WEEKS } from "./constants";
 
-const DEFENSIVE_FAMILIES = new Set(["GOALKEEPER", "CENTRE_BACK", "FULLBACK", "WINGBACK"]);
+export const DEFENSIVE_FAMILIES = new Set(["GOALKEEPER", "CENTRE_BACK", "FULLBACK", "WINGBACK"]);
 
 // ---------------------------------------------------------------------------
 // Context
@@ -108,8 +108,30 @@ const MOMENT_COUNT: Record<MatchImportance, [number, number]> = {
   CLUTCH: [4, 5],
 };
 
-function templatesForFamily(family: string): MatchMomentTemplate[] {
+export const MOMENT_COUNT_BY_IMPORTANCE = MOMENT_COUNT;
+
+export function templatesForFamily(family: string): MatchMomentTemplate[] {
   return MATCH_MOMENTS.filter((m) => m.positionFamilies.includes(family as never));
+}
+
+/** Instantiate a concrete moment from a template for a specific match minute. */
+export function instantiateMoment(
+  matchId: string,
+  template: MatchMomentTemplate,
+  minute: number,
+  importance: MatchImportance,
+  index: number,
+): MatchMoment {
+  return {
+    id: `${matchId}-mom-${index}-${template.id}`,
+    templateId: template.id,
+    positionFamilies: template.positionFamilies,
+    minute,
+    title: template.title,
+    description: template.description,
+    importance,
+    choices: template.choices,
+  };
 }
 
 export function generateMatchMoments(career: Career, ctx: MatchContext): MatchMoment[] {
@@ -223,12 +245,27 @@ function outcomeForTier(choice: MatchMomentChoiceTemplate, tier: ResolutionTier)
   }
 }
 
-/** Pure: resolve a single moment choice into its outcome. Does not mutate the career. */
-export function resolveMatchMoment(
+/**
+ * Extra inputs that let the live sim modulate a resolution beyond the player's
+ * static career state (momentum, in-match confidence, drained stamina).
+ */
+export type ResolveOpts = {
+  /** Effective fatigue (0-100) to use for the penalty; defaults to career fatigue. */
+  fatigue?: number;
+  /** Flat additive modifier to the check score (momentum + in-match confidence). */
+  extraMod?: number;
+};
+
+/**
+ * Shared core: resolve one moment choice into an outcome. Pure — no mutation.
+ * Used by both the quick `resolveMatchMoment` and the live simulator.
+ */
+export function resolveChoiceOutcome(
   career: Career,
   ctx: MatchContext,
   moment: MatchMoment,
   choiceId: string,
+  opts: ResolveOpts = {},
 ): MatchMomentResult {
   const choice = moment.choices.find((c) => c.id === choiceId) ?? moment.choices[0];
   const r = rng(career.seed, "resolve", moment.id, choiceId);
@@ -242,14 +279,15 @@ export function resolveMatchMoment(
     (s.teamChemistry - 50) * 0.03;
   const traitMod = traitCheckModifier(career, ctx, choice.check);
   const oppPenalty = (ctx.opponentStrength - 50) * 0.25;
-  const moment_importance_pressure =
+  const momentPressure =
     (moment.importance === "CLUTCH" ? -3 : moment.importance === "HIGH" ? -1.5 : 0) *
     (1 - s.confidence / 130);
+  const fatigue = opts.fatigue ?? s.fatigue;
   const noise = r.noise(13);
 
   const score =
-    base + statusMod + traitMod - fatiguePenalty(s.fatigue) - oppPenalty +
-    moment_importance_pressure + noise;
+    base + statusMod + traitMod - fatiguePenalty(fatigue) - oppPenalty +
+    momentPressure + (opts.extraMod ?? 0) + noise;
 
   const tier = tierFromScore(score, choice.risk);
   let outcome = outcomeForTier(choice, tier);
@@ -276,6 +314,16 @@ export function resolveMatchMoment(
   };
 }
 
+/** Pure: resolve a single moment choice into its outcome. Does not mutate the career. */
+export function resolveMatchMoment(
+  career: Career,
+  ctx: MatchContext,
+  moment: MatchMoment,
+  choiceId: string,
+): MatchMomentResult {
+  return resolveChoiceOutcome(career, ctx, moment, choiceId);
+}
+
 // ---------------------------------------------------------------------------
 // Finishing the match
 // ---------------------------------------------------------------------------
@@ -284,7 +332,7 @@ function sampleGoals(r: Rng, lambda: number): number {
   return Math.max(0, Math.round(lambda + r.noise(1.3)));
 }
 
-function pickHeadline(
+export function pickHeadline(
   r: Rng,
   tone: "POSITIVE" | "NEUTRAL" | "NEGATIVE",
   fill: Record<string, string | number>,

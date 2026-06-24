@@ -52,6 +52,13 @@ export function PostMatch() {
 
         <HeadlineCard headline={result.headline} />
 
+        {result.momentOfMatch && (
+          <Card>
+            <SectionTitle>Moment of the Match</SectionTitle>
+            <p className="text-sm text-[var(--text)]/90">{result.momentOfMatch}</p>
+          </Card>
+        )}
+
         {statEntries.length > 0 && (
           <Card>
             <SectionTitle>Your Match</SectionTitle>

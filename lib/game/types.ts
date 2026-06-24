@@ -441,6 +441,65 @@ export type MatchResult = {
   statusDeltas: Partial<PlayerStatus>;
   headline: string;
   injury?: Injury;
+  /** "Moment of the match" narrative, if one stood out. */
+  momentOfMatch?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Live match simulation (Stage 1: the "Living Match")
+// ---------------------------------------------------------------------------
+
+/** How the live match state frames the player's next decision. */
+export type MatchSituation = "NEUTRAL" | "CHASING" | "CHASING_HARD" | "PROTECTING";
+
+export type MatchBeatKind = "NARRATED" | "PLAYER" | "RESULT" | "FULL_TIME";
+
+/** One entry in the live match feed. */
+export type MatchBeat = {
+  id: string;
+  kind: MatchBeatKind;
+  minute: number;
+  text?: string;
+  /** A goal was scored on this beat (narrated beats). */
+  scored?: "TEAM" | "OPP" | null;
+  tone?: HeadlineTone;
+  /** For PLAYER beats: the decision to present. */
+  moment?: MatchMoment;
+  /** For PLAYER beats: how the live state frames the decision. */
+  situation?: MatchSituation;
+  /** For RESULT beats: the resolved outcome + any contextual note. */
+  result?: MatchMomentResult;
+  contextNote?: string;
+};
+
+/** A pre-planned slot in the match skeleton (seeded at kickoff). */
+export type PlannedSlot = {
+  kind: "NARRATED" | "PLAYER";
+  minute: number;
+  templateId?: string;
+  importance: MatchImportance;
+};
+
+/** Live, transient state of a match in progress (not persisted to saves). */
+export type MatchState = {
+  matchId: string;
+  context: MatchContext;
+  minute: number;
+  teamScore: number;
+  oppScore: number;
+  /** -100 (opponent on top) .. +100 (your team on top). */
+  momentum: number;
+  /** In-match stamina 0-100; drains across the game, faster for bold play. */
+  stamina: number;
+  /** In-match confidence streak -100..100, layered on career confidence. */
+  matchConfidence: number;
+  onPitch: boolean;
+  plan: PlannedSlot[];
+  queueIndex: number;
+  momentResults: MatchMomentResult[];
+  /** The moment currently awaiting the player's choice, if any. */
+  pendingMoment: MatchMoment | null;
+  finished: boolean;
 };
 
 // ---------------------------------------------------------------------------

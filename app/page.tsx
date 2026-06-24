@@ -9,7 +9,7 @@ import { WeeklyChoice } from "@/components/screens/WeeklyChoice";
 import { StoryEvent } from "@/components/screens/StoryEvent";
 import { InjuredWeek } from "@/components/screens/InjuredWeek";
 import { MatchDay } from "@/components/screens/MatchDay";
-import { MatchMomentScreen } from "@/components/screens/MatchMomentScreen";
+import { LiveMatch } from "@/components/screens/LiveMatch";
 import { PostMatch } from "@/components/screens/PostMatch";
 import { SeasonRecap } from "@/components/screens/SeasonRecap";
 import { TransferWindow } from "@/components/screens/TransferWindow";
@@ -32,7 +32,7 @@ function ScreenBody() {
     case "EVENT": return <StoryEvent />;
     case "INJURED": return <InjuredWeek />;
     case "MATCH_DAY": return <MatchDay />;
-    case "MATCH_MOMENT": return <MatchMomentScreen />;
+    case "LIVE_MATCH": return <LiveMatch />;
     case "POST_MATCH": return <PostMatch />;
     case "SEASON_RECAP": return <SeasonRecap />;
     case "TRANSFER": return <TransferWindow />;

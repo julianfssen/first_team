@@ -4,11 +4,13 @@
  * environment and that their handlers drive the store (catches client-runtime
  * errors that SSR build checks miss).
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { Landing } from "@/components/screens/Landing";
 import { CreatePlayer } from "@/components/screens/CreatePlayer";
 import { CareerHub } from "@/components/screens/CareerHub";
+import { LiveMatch } from "@/components/screens/LiveMatch";
+import { generateMatchContext } from "@/lib/game/matchEngine";
 import { useGame } from "@/lib/store/gameStore";
 
 beforeEach(() => useGame.setState({ screen: "LANDING", career: null }));
@@ -54,5 +56,32 @@ describe("screen rendering", () => {
     expect(screen.getByText(/Continue/)).toBeTruthy();
     // Goalkeeper-specific stat should appear.
     expect(screen.getByText("Clean Sheets")).toBeTruthy();
+  });
+
+  it("renders the live match HUD without streaming yet", () => {
+    vi.useFakeTimers(); // freeze the auto-advance timer so we can assert the initial state
+    try {
+      useGame.getState().newCareer({
+        name: "Live Tester",
+        nationality: "Argentina",
+        startingRegion: "SOUTH_AMERICA",
+        position: "RW",
+        strongFoot: "LEFT",
+        playstyle: "TECHNICAL",
+        personality: "FLASHY",
+        background: "STREET_FOOTBALLER",
+        seed: "live-seed-1",
+      });
+      const ctx = generateMatchContext(useGame.getState().career!);
+      useGame.setState({ matchContext: ctx });
+      useGame.getState().kickOff();
+      expect(useGame.getState().screen).toBe("LIVE_MATCH");
+
+      render(<LiveMatch />);
+      expect(screen.getByText(ctx.opponentName)).toBeTruthy();
+      expect(screen.getByText("0–0")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

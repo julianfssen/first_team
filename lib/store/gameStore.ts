@@ -3,14 +3,12 @@
 /**
  * Game store: the bridge between pure engine functions and the React UI.
  *
- * The store holds the persisted Career plus transient flow state, and drives a
- * simple screen state machine:
- *
- *   LANDING → CREATE → HUB → WEEKLY → (EVENT) → MATCH_DAY → MATCH_MOMENT*
+ * Screen state machine:
+ *   LANDING → CREATE → HUB → WEEKLY → (EVENT) → MATCH_DAY → LIVE_MATCH
  *           → POST_MATCH → (SEASON_RECAP → TRANSFER) → HUB ... → RETIREMENT
  *
- * UI components never run game logic — they read state and call these actions,
- * which delegate to the engine.
+ * The match is the "Living Match": LIVE_MATCH streams beats from the simulator
+ * (advanceOne) and pauses for player decisions (resolveLiveChoice).
  */
 
 import { create } from "zustand";
@@ -18,10 +16,10 @@ import type {
   Career,
   CareerEvent,
   CreateCareerInput,
+  MatchBeat,
   MatchContext,
-  MatchMoment,
-  MatchMomentResult,
   MatchResult,
+  MatchState,
   RetirementReason,
   SeasonRecap,
   TransferOffer,
@@ -30,14 +28,13 @@ import type {
 import { createCareer } from "@/lib/game/createCareer";
 import { advanceWeek } from "@/lib/game/weeklyEngine";
 import { generateCareerEvent, applyEventChoice } from "@/lib/game/eventEngine";
+import { generateMatchContext, applyMatchResult, commitWeek } from "@/lib/game/matchEngine";
 import {
-  generateMatchContext,
-  generateMatchMoments,
-  resolveMatchMoment,
-  finishMatch,
-  applyMatchResult,
-  commitWeek,
-} from "@/lib/game/matchEngine";
+  startMatch,
+  advanceMatch,
+  resolvePlayerBeat,
+  finalizeMatch,
+} from "@/lib/game/matchSimEngine";
 import { finishSeason } from "@/lib/game/seasonEngine";
 import {
   generateTransferOffers,
@@ -57,7 +54,7 @@ export type Screen =
   | "EVENT"
   | "INJURED"
   | "MATCH_DAY"
-  | "MATCH_MOMENT"
+  | "LIVE_MATCH"
   | "POST_MATCH"
   | "SEASON_RECAP"
   | "TRANSFER"
@@ -73,37 +70,36 @@ interface GameState {
   currentEvent: CareerEvent | null;
   eventResultText: string | null;
   matchContext: MatchContext | null;
-  moments: MatchMoment[];
-  momentIndex: number;
-  momentResults: MatchMomentResult[];
-  revealedResult: MatchMomentResult | null;
+
+  // Live match.
+  matchState: MatchState | null;
+  feed: MatchBeat[];
+  awaitingChoice: boolean;
+  matchOver: boolean;
   matchResult: MatchResult | null;
+
   seasonRecap: SeasonRecap | null;
   transferOffers: TransferOffer[];
 
-  // Navigation.
   setScreen: (screen: Screen) => void;
   goHub: () => void;
 
-  // Lifecycle.
   newCareer: (input: CreateCareerInput) => void;
   loadSlot: (id: string) => void;
   saveManual: (slotIndex: number) => void;
 
-  // Weekly loop.
   startWeek: () => void;
   chooseWeekly: (choiceId: WeeklyChoiceId) => void;
   chooseEvent: (choiceId: string) => void;
   dismissEventResult: () => void;
   continueFromInjured: () => void;
 
-  // Match.
   kickOff: () => void;
-  resolveMoment: (choiceId: string) => void;
-  nextMoment: () => void;
+  advanceOne: () => void;
+  resolveLiveChoice: (choiceId: string) => void;
+  finishLiveMatch: () => void;
   continueFromPostMatch: () => void;
 
-  // Season / transfers / retirement.
   continueFromSeasonRecap: () => void;
   acceptOffer: (offer: TransferOffer) => void;
   declineOffers: () => void;
@@ -117,10 +113,10 @@ const TRANSIENT_RESET: Pick<
   | "currentEvent"
   | "eventResultText"
   | "matchContext"
-  | "moments"
-  | "momentIndex"
-  | "momentResults"
-  | "revealedResult"
+  | "matchState"
+  | "feed"
+  | "awaitingChoice"
+  | "matchOver"
   | "matchResult"
 > = {
   weekLog: [],
@@ -128,15 +124,14 @@ const TRANSIENT_RESET: Pick<
   currentEvent: null,
   eventResultText: null,
   matchContext: null,
-  moments: [],
-  momentIndex: 0,
-  momentResults: [],
-  revealedResult: null,
+  matchState: null,
+  feed: [],
+  awaitingChoice: false,
+  matchOver: false,
   matchResult: null,
 };
 
 export const useGame = create<GameState>((set, get) => {
-  /** Increment the week and route to the next screen (hub or season end). */
   function commitAndRoute(career: Career) {
     const { career: next, seasonComplete } = commitWeek(career);
     if (seasonComplete) {
@@ -158,12 +153,6 @@ export const useGame = create<GameState>((set, get) => {
     }
     const ctx = generateMatchContext(career);
     set({ matchContext: ctx, currentEvent: null, eventResultText: null, screen: "MATCH_DAY" });
-  }
-
-  function finishAndPost(career: Career, ctx: MatchContext, results: MatchMomentResult[]) {
-    const result = finishMatch(career, ctx, results);
-    const updated = applyMatchResult(career, result);
-    set({ career: updated, matchResult: result, revealedResult: null, screen: "POST_MATCH" });
   }
 
   return {
@@ -235,31 +224,35 @@ export const useGame = create<GameState>((set, get) => {
     kickOff: () => {
       const { career, matchContext } = get();
       if (!career || !matchContext) return;
-      const moments = generateMatchMoments(career, matchContext);
-      if (moments.length === 0) {
-        finishAndPost(career, matchContext, []);
-        return;
-      }
-      set({ moments, momentIndex: 0, momentResults: [], revealedResult: null, screen: "MATCH_MOMENT" });
+      const matchState = startMatch(career, matchContext);
+      set({ matchState, feed: [], awaitingChoice: false, matchOver: false, screen: "LIVE_MATCH" });
     },
 
-    resolveMoment: (choiceId) => {
-      const { career, matchContext, moments, momentIndex, momentResults } = get();
-      if (!career || !matchContext) return;
-      const moment = moments[momentIndex];
-      const result = resolveMatchMoment(career, matchContext, moment, choiceId);
-      set({ revealedResult: result, momentResults: [...momentResults, result] });
+    advanceOne: () => {
+      const { career, matchState, awaitingChoice, matchOver } = get();
+      if (!career || !matchState || awaitingChoice || matchOver) return;
+      const { state, beat } = advanceMatch(career, matchState);
+      set({
+        matchState: state,
+        feed: [...get().feed, beat],
+        awaitingChoice: beat.kind === "PLAYER",
+        matchOver: beat.kind === "FULL_TIME",
+      });
     },
 
-    nextMoment: () => {
-      const { momentIndex, moments, career, matchContext, momentResults } = get();
-      if (!career || !matchContext) return;
-      const next = momentIndex + 1;
-      if (next < moments.length) {
-        set({ momentIndex: next, revealedResult: null });
-      } else {
-        finishAndPost(career, matchContext, momentResults);
-      }
+    resolveLiveChoice: (choiceId) => {
+      const { career, matchState } = get();
+      if (!career || !matchState) return;
+      const { state, beat } = resolvePlayerBeat(career, matchState, choiceId);
+      set({ matchState: state, feed: [...get().feed, beat], awaitingChoice: false });
+    },
+
+    finishLiveMatch: () => {
+      const { career, matchState } = get();
+      if (!career || !matchState) return;
+      const result = finalizeMatch(career, matchState);
+      const updated = applyMatchResult(career, result);
+      set({ career: updated, matchResult: result, screen: "POST_MATCH" });
     },
 
     continueFromPostMatch: () => {

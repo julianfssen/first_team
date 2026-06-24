@@ -45,17 +45,22 @@ function playOneWeek() {
   // Match day.
   expect(s().screen).toBe("MATCH_DAY");
   s().kickOff();
+  expect(s().screen).toBe("LIVE_MATCH");
 
-  // Resolve any moments.
+  // Drive the live match: stream beats, resolving player moments as they appear.
   let guard = 0;
-  while (s().screen === "MATCH_MOMENT") {
-    if (guard++ > 20) throw new Error("moment loop did not terminate");
-    const moment = s().moments[s().momentIndex];
-    s().resolveMoment(moment.choices[0].id);
-    expect(s().revealedResult).toBeTruthy();
-    s().nextMoment();
+  while (!s().matchOver) {
+    if (guard++ > 500) throw new Error("live match did not terminate");
+    if (s().awaitingChoice) {
+      const moment = s().matchState!.pendingMoment!;
+      s().resolveLiveChoice(moment.choices[0].id);
+      expect(s().awaitingChoice).toBe(false);
+    } else {
+      s().advanceOne();
+    }
   }
 
+  s().finishLiveMatch();
   expect(s().screen).toBe("POST_MATCH");
   expect(s().matchResult).toBeTruthy();
   s().continueFromPostMatch();
