@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
+import { keeperReach } from "@/lib/game/skillEngine";
 import { cx } from "@/components/ui";
 import { clamp } from "@/lib/game/util";
 
@@ -49,14 +50,13 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const [shot, setShot] = useState<{ crossX: number } | null>(null);
+  const [t, setT] = useState(0); // fraction of the closing window elapsed
+  const startRef = useRef<number | null>(null);
+  const firedRef = useRef(false);
+  const fireRef = useRef<(() => void) | null>(null);
 
-  const kCenter = challenge.keeperCenter ?? 0.5;
-  const kWidth = challenge.keeperWidth ?? 0.4;
   const span = MOUTH_R - MOUTH_L;
-  const kx = MOUTH_L + kCenter * span;
-  const halfBand = (kWidth * span) / 2;
-  const bandL = kx - halfBand;
-  const bandR = kx + halfBand;
+  const windowMs = challenge.windowMs ?? 1700;
 
   function toSvg(e: React.PointerEvent): { x: number; y: number } {
     const r = svgRef.current?.getBoundingClientRect();
@@ -66,12 +66,11 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
 
   function compute(p: { x: number; y: number }): { aim: number; power: number; crossX: number } {
     const launch = { x: ANCHOR.x - p.x, y: ANCHOR.y - p.y };
-    const mag = Math.hypot(launch.x, launch.y);
-    const power = clamp(mag / MAX_PULL, 0, 1);
+    const power = clamp(Math.hypot(launch.x, launch.y) / MAX_PULL, 0, 1);
     let crossX = ANCHOR.x;
     if (launch.y < -1) {
-      const t = (GOAL_Y - ANCHOR.y) / launch.y;
-      crossX = clamp(ANCHOR.x + launch.x * t, MOUTH_L, MOUTH_R);
+      const k = (GOAL_Y - ANCHOR.y) / launch.y;
+      crossX = clamp(ANCHOR.x + launch.x * k, MOUTH_L, MOUTH_R);
     }
     const aim = clamp((crossX - MOUTH_L) / span, 0, 1);
     return {
@@ -80,6 +79,35 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
       crossX: Number.isFinite(crossX) ? crossX : ANCHOR.x,
     };
   }
+
+  function doFire(aim: number, power: number, crossX: number) {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    setShot({ crossX });
+    const timing = clamp(t, 0, 1);
+    window.setTimeout(() => onComplete({ value: aim, power, timing }), 700);
+  }
+  // Keep the auto-fire closure fresh so the rAF loop fires with the latest drag
+  // (a weak, central effort if you dithered until the window ran out).
+  useEffect(() => {
+    fireRef.current = () => {
+      const c = drag ? compute(drag) : { aim: 0.5, power: 0.4, crossX: ANCHOR.x };
+      doFire(c.aim, c.power, c.crossX);
+    };
+  });
+
+  useEffect(() => {
+    let raf = 0;
+    const loop = (now: number) => {
+      if (startRef.current === null) startRef.current = now;
+      const tt = Math.min(1, (now - startRef.current) / windowMs);
+      setT(tt);
+      if (tt >= 1) fireRef.current?.();
+      else if (!firedRef.current) raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [windowMs]);
 
   const live = drag && !shot ? compute(drag) : null;
 
@@ -93,14 +121,18 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
     setDrag(toSvg(e));
   }
   function onUp() {
-    if (shot) return;
-    const c = drag ? compute(drag) : { aim: 0.5, power: 0.35, crossX: ANCHOR.x };
-    setShot({ crossX: c.crossX });
-    window.setTimeout(() => onComplete({ value: c.aim, power: c.power }), 700);
+    if (shot || !drag) return;
+    const c = compute(drag);
+    doFire(c.aim, c.power, c.crossX);
   }
 
+  // The keeper's reach (drawn = what's scored), reacting to time + your power.
+  const livePower = live?.power ?? 0.55;
+  const reach = keeperReach(challenge, t, livePower);
+  const bandHalf = reach * span;
   const ballPos = shot ? { x: shot.crossX, y: GOAL_Y } : drag ? drag : ANCHOR;
   const powerPct = Math.round((live?.power ?? 0) * 100);
+  const clockPct = Math.max(0, (1 - t) * 100);
 
   return (
     <div className="select-none">
@@ -113,35 +145,32 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
         onPointerUp={onUp}
         onPointerLeave={onUp}
       >
-        {/* open gaps (aim here) */}
-        <rect x={MOUTH_L} y="6" width={Math.max(0, bandL - MOUTH_L)} height={GOAL_Y + 6} fill="var(--accent)" opacity="0.16" />
-        <rect x={bandR} y="6" width={Math.max(0, MOUTH_R - bandR)} height={GOAL_Y + 6} fill="var(--accent)" opacity="0.16" />
-        {/* keeper's covered band */}
-        <rect x={bandL} y="6" width={halfBand * 2} height={GOAL_Y + 6} fill="var(--danger)" opacity="0.16" />
-
-        {/* goal frame */}
-        <line x1={MOUTH_L} y1="6" x2={MOUTH_R} y2="6" stroke="#e8edf4" strokeWidth="1.4" />
+        {/* goal frame (crossbar emphasised — too much power sails over) */}
+        <line x1={MOUTH_L} y1="6" x2={MOUTH_R} y2="6" stroke="#e8edf4" strokeWidth="2" />
         <line x1={MOUTH_L} y1="6" x2={MOUTH_L} y2={GOAL_Y + 6} stroke="#e8edf4" strokeWidth="1.4" />
         <line x1={MOUTH_R} y1="6" x2={MOUTH_R} y2={GOAL_Y + 6} stroke="#e8edf4" strokeWidth="1.4" />
         {[26, 40, 54, 68].map((x) => (
-          <line key={x} x1={x} y1="6" x2={x} y2={GOAL_Y + 6} stroke="#ffffff" strokeWidth="0.3" opacity="0.18" />
+          <line key={x} x1={x} y1="6" x2={x} y2={GOAL_Y + 6} stroke="#ffffff" strokeWidth="0.3" opacity="0.15" />
         ))}
+
+        {/* keeper's reach — the danger zone grows as the window closes */}
+        <rect x={50 - bandHalf} y="7" width={bandHalf * 2} height={GOAL_Y + 4} fill="var(--danger)" opacity="0.2" />
 
         {/* keeper */}
         <motion.g
-          animate={shot ? { x: (shot.crossX - kx) * 0.45, rotate: shot.crossX < kx ? -16 : 16 } : { x: 0, rotate: 0 }}
+          animate={shot ? { x: (shot.crossX - 50) * 0.5, rotate: shot.crossX < 50 ? -18 : 18 } : { x: 0, rotate: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          style={{ originX: `${kx}px`, originY: `${GOAL_Y}px` }}
+          style={{ originX: "50px", originY: `${GOAL_Y}px` }}
         >
-          <circle cx={kx} cy="13" r="3" fill="#fbbf24" />
-          <rect x={kx - 3} y="15" width="6" height="9" rx="2" fill="#fbbf24" />
-          <text x={kx} y="22" fontSize="6" textAnchor="middle">🧤</text>
+          <circle cx="50" cy="13" r="3" fill="#fbbf24" />
+          <rect x="47" y="15" width="6" height="9" rx="2" fill="#fbbf24" />
+          <text x="50" y="22" fontSize="6" textAnchor="middle">🧤</text>
         </motion.g>
 
         {/* aim guide */}
         {live && (
           <>
-            <line x1={ANCHOR.x} y1={ANCHOR.y} x2={live.crossX} y2={GOAL_Y} stroke="var(--accent)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.8" />
+            <line x1={ANCHOR.x} y1={ANCHOR.y} x2={live.crossX} y2={GOAL_Y} stroke="var(--accent)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.85" />
             <circle cx={live.crossX} cy={GOAL_Y} r="1.8" fill="var(--accent)" />
           </>
         )}
@@ -158,6 +187,14 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
         <circle cx={ANCHOR.x} cy={ANCHOR.y} r="0.8" fill="#ffffff" opacity="0.4" />
       </svg>
 
+      {/* shot clock */}
+      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--surface)]">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${clockPct}%`, backgroundColor: clockPct < 30 ? "var(--danger)" : "var(--warn)" }}
+        />
+      </div>
+
       <div className="mt-2 flex items-center gap-2">
         <span className="w-12 text-[10px] uppercase tracking-wider text-[var(--muted)]">Power</span>
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface)]">
@@ -168,7 +205,7 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
         </div>
       </div>
       <p className="mt-1 text-center text-[10px] text-[var(--muted)]">
-        {shot ? "Struck!" : "Drag back from the ball, aim for a green gap, release to shoot"}
+        {shot ? "Struck!" : "Drag back, beat the keeper to a corner — hard, before the gap shuts"}
       </p>
     </div>
   );

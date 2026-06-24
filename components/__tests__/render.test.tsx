@@ -89,7 +89,7 @@ describe("screen rendering", () => {
   it("shot scene mounts with its aim/power UI", () => {
     render(
       <SkillChallengeView
-        challenge={{ kind: "AIM", flavor: "SHOT", forgiveness: 0.8, label: "Strike!", prompt: "p", keeperCenter: 0.5, keeperWidth: 0.3 }}
+        challenge={{ kind: "AIM", flavor: "SHOT", forgiveness: 0.8, label: "Strike!", prompt: "p", reachBase: 0.18, reachGrow: 0.18, powerFloor: 0.25, windowMs: 1700 }}
         onComplete={() => {}}
         onCancel={() => {}}
       />,

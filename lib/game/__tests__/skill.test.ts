@@ -66,34 +66,43 @@ describe("skill challenge", () => {
     expect(a?.kind).toBe("AIM");
     expect(a?.flavor).toBe("SHOT");
     expect(a).toEqual(b);
-    expect(a?.keeperWidth).toBeGreaterThan(0);
-    expect(a?.keeperCenter).toBeGreaterThan(0);
+    expect(a?.reachBase).toBeGreaterThan(0);
+    expect(a?.windowMs).toBeGreaterThan(0);
   });
 
-  it("gives better finishers a wider open gap (keeper covers less of the goal)", () => {
+  it("gives better finishers a smaller keeper reach", () => {
     const base = createCareer(INPUT);
     const elite = buildSkillChallenge(withFinishing(base, 95), shotState(base), "shoot-low")!;
     const poor = buildSkillChallenge(withFinishing(base, 15), shotState(base), "shoot-low")!;
     expect(elite.forgiveness).toBeGreaterThan(poor.forgiveness);
-    expect(elite.keeperWidth!).toBeLessThan(poor.keeperWidth!);
+    expect(elite.reachBase!).toBeLessThan(poor.reachBase!);
   });
 });
 
 describe("skill scoring", () => {
+  const shotChallenge = {
+    kind: "AIM" as const, flavor: "SHOT" as const, forgiveness: 0.9, label: "", prompt: "",
+    reachBase: 0.16, reachGrow: 0.18, powerFloor: 0.25, windowMs: 1700,
+  };
+
   it("scores a corner past the keeper high and a shot straight at them low", () => {
-    const challenge = { kind: "AIM" as const, flavor: "SHOT" as const, forgiveness: 0.9, label: "", prompt: "", keeperCenter: 0.5, keeperWidth: 0.2 };
-    const openCorner = scoreSkillInput(challenge, { value: 0.02, power: 0.7 });
-    const atKeeper = scoreSkillInput(challenge, { value: 0.5, power: 0.7 });
+    const openCorner = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.7, timing: 0.2 });
+    const atKeeper = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2 });
     expect(openCorner).toBeGreaterThan(0.8);
     expect(atKeeper).toBeLessThan(0.3);
     expect(tierFromAccuracy(openCorner)).toBe("GREAT");
     expect(tierFromAccuracy(atKeeper)).toBe("DISASTER");
   });
 
-  it("punishes a scuffed (too soft) strike even into an open corner", () => {
-    const challenge = { kind: "AIM" as const, flavor: "SHOT" as const, forgiveness: 0.9, label: "", prompt: "", keeperCenter: 0.5, keeperWidth: 0.2 };
-    const firm = scoreSkillInput(challenge, { value: 0.02, power: 0.7 });
-    const scuffed = scoreSkillInput(challenge, { value: 0.02, power: 0.2 });
+  it("waiting for the gap to shut makes the same shot harder", () => {
+    const early = scoreSkillInput(shotChallenge, { value: 0.2, power: 0.7, timing: 0.15 });
+    const late = scoreSkillInput(shotChallenge, { value: 0.2, power: 0.7, timing: 0.95 });
+    expect(early).toBeGreaterThan(late);
+  });
+
+  it("punishes a scuffed (too soft) strike even into a corner", () => {
+    const firm = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.7, timing: 0.2 });
+    const scuffed = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.15, timing: 0.2 });
     expect(scuffed).toBeLessThan(firm);
   });
 
@@ -108,17 +117,12 @@ describe("skill resolution", () => {
   it("a finish into an open corner scores; a finish at the keeper is saved", () => {
     const c = withFinishing(createCareer(INPUT), 95);
     const state = shotState(c);
-    const challenge = buildSkillChallenge(c, state, "shoot-low")!;
-    const lo = challenge.keeperCenter! - challenge.keeperWidth! / 2;
-    const hi = challenge.keeperCenter! + challenge.keeperWidth! / 2;
-    // Aim at the post with more room past the keeper.
-    const openAim = lo >= 1 - hi ? 0.02 : 0.98;
-
-    const scored = resolvePlayerBeat(c, state, "shoot-low", { value: openAim, power: 0.7 });
+    // Keeper sits centrally — beat them to a post early, with pace.
+    const scored = resolvePlayerBeat(c, state, "shoot-low", { value: 0.02, power: 0.7, timing: 0.15 });
     expect(scored.result.outcome).toBe("GOAL");
     expect(scored.state.teamScore).toBe(1);
 
-    const saved = resolvePlayerBeat(c, state, "shoot-low", { value: challenge.keeperCenter!, power: 0.7 });
+    const saved = resolvePlayerBeat(c, state, "shoot-low", { value: 0.5, power: 0.7, timing: 0.5 });
     expect(saved.result.outcome).toBe("CHANCE_MISSED");
     expect(saved.state.teamScore).toBe(0);
   });

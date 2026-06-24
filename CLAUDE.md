@@ -89,13 +89,21 @@ is sometimes the wrong one). Built in stages:
   `data/passages.ts` (~21, ≥3 per family) and are biased to appear on big moments.
 - **Stage 3 — done:** stat-gated skill flourishes on marquee beats, presented as
   animated football scenes (`components/game/Skill.tsx`, SVG + Framer Motion):
-  SHOOT → **drag-and-flick** at a goalmouth with a stat-positioned diving keeper
-  (input = aim + power); GK_SAVE → **dive** timing; high-risk DEFEND → **slide**
-  timing; high-risk PASS → **through-ball** "lead the run" timing. `skillEngine`
-  sizes the success window from deterministic competence (stats/form/traits −
-  fatigue − pressure); the player's input resolves execution → tier → normal
-  outcome pipeline. If no skill input is supplied it falls back to the RNG roll
-  (back-compatible). Skill kind/flavor is inferred from the choice's `check`.
+  SHOOT → **drag-and-flick**; GK_SAVE → **dive** timing; high-risk DEFEND →
+  **slide** timing; high-risk PASS → **through-ball** "lead the run" timing.
+  `skillEngine` sizes difficulty from deterministic competence (stats/form/traits
+  − fatigue − pressure); the player's input resolves execution → tier → normal
+  outcome pipeline. Falls back to the RNG roll if no input (back-compatible).
+  Skill kind/flavor inferred from the choice's `check`.
+
+  **Shot model (reworked for difficulty):** the keeper sits centrally and CLOSES
+  the gap over a short shot-clock (`windowMs`) — `keeperReach()` (shared by the
+  scene and the scorer so the drawn danger zone == what's scored) grows with
+  elapsed time and with low power, shrinks with finishing. You must beat the
+  keeper out to a *corner*, with enough power (a `powerFloor`, and a ceiling that
+  sails it over), before the window shuts; dithering auto-fires a weak effort.
+  Seeded `shotType` (NORMAL / ONE_ON_ONE / LONG_RANGE) varies window, reach
+  growth and power needs. No more "aim at the labelled green gap".
 - **Stage 4 — done:** consequences & juice. In-match **substitution risk**
   (poor + gassed + low coach trust late → hooked early: moments skipped, fewer
   minutes, coach-trust/morale hit) and the impact-sub reward; in-match

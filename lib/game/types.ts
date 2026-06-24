@@ -436,17 +436,26 @@ export type SkillKind = "AIM" | "TIMING" | "RUN";
 /** The football action a challenge represents (drives which animated scene shows). */
 export type SkillFlavor = "SHOT" | "TACKLE" | "SAVE" | "THROUGH_BALL";
 
+export type ShotType = "NORMAL" | "ONE_ON_ONE" | "LONG_RANGE";
+
 /** Parameters for a skill mini-game, derived deterministically from competence. */
 export type SkillChallenge = {
   kind: SkillKind;
   flavor: SkillFlavor;
-  /** 0..1; higher = easier (wider gap past the keeper / bigger timing window). */
+  /** 0..1; higher = easier (smaller keeper reach / bigger timing window). */
   forgiveness: number;
   label: string;
   prompt: string;
-  // AIM (shot): the keeper covers a continuous band of the goal mouth (0..1).
-  keeperCenter?: number;
-  keeperWidth?: number;
+  // AIM (shot): the keeper sits centrally and CLOSES the gap over the window.
+  // reach (how much of the goal centre is covered) = reachBase + reachGrow*timing
+  // + a softness penalty for low power; you must beat it out to a corner.
+  shotType?: ShotType;
+  reachBase?: number;
+  reachGrow?: number;
+  /** Minimum power for the shot to even reach / not be gathered. */
+  powerFloor?: number;
+  /** Closing-window duration in ms before the keeper smothers it. */
+  windowMs?: number;
   // TIMING / RUN: a sweet window along a 0..1 track.
   sweetCenter?: number;
   sweetWidth?: number;
@@ -454,10 +463,11 @@ export type SkillChallenge = {
 
 /**
  * The player's raw input.
- * AIM: value = aim position across the goal (0..1), power = strike power (0..1).
+ * AIM: value = aim across the goal (0..1), power = strike power (0..1),
+ *      timing = fraction of the closing window elapsed at release (0..1).
  * TIMING / RUN: value = the moment committed (0..1).
  */
-export type SkillInput = { value: number; power?: number };
+export type SkillInput = { value: number; power?: number; timing?: number };
 
 /** A moment instantiated for a specific match. */
 export type MatchMoment = {

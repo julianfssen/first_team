@@ -17,6 +17,7 @@ import type {
   Career,
   MatchMomentChoiceTemplate,
   MatchState,
+  ShotType,
   SkillChallenge,
   SkillFlavor,
   SkillInput,
@@ -70,18 +71,36 @@ export function buildSkillChallenge(
   const r = rng(career.seed, "skill", moment.id, choiceId);
 
   if (kind === "AIM") {
-    // Better finishers face a keeper covering a narrower band → a wider open gap.
-    const keeperWidth = clamp(0.58 - forgiveness * 0.42, 0.12, 0.6);
-    const keeperCenter = clamp(r.range(0.2, 0.8), keeperWidth / 2, 1 - keeperWidth / 2);
-    return {
-      kind,
-      flavor,
-      forgiveness,
-      label: "Strike!",
-      prompt: "Drag back and flick — aim past the keeper, into the corner.",
-      keeperCenter,
-      keeperWidth,
-    };
+    const fInv = 1 - forgiveness;
+    const roll = r.float();
+    let shotType: ShotType, reachBase: number, reachGrow: number, powerFloor: number, windowMs: number;
+    let label: string, prompt: string;
+    if (roll > 0.82) {
+      shotType = "ONE_ON_ONE";
+      reachBase = 0.12 + fInv * 0.14;
+      reachGrow = 0.32; // the keeper smothers it FAST
+      powerFloor = 0.2;
+      windowMs = 1200;
+      label = "One-on-one!";
+      prompt = "Keeper's rushing out — shoot early and pick your side.";
+    } else if (roll > 0.64) {
+      shotType = "LONG_RANGE";
+      reachBase = 0.18 + fInv * 0.16;
+      reachGrow = 0.12;
+      powerFloor = 0.55; // you need real power from distance
+      windowMs = 2000;
+      label = "From distance";
+      prompt = "Long shot — you'll need real power to beat the keeper.";
+    } else {
+      shotType = "NORMAL";
+      reachBase = 0.15 + fInv * 0.16;
+      reachGrow = 0.18;
+      powerFloor = 0.25;
+      windowMs = 1700;
+      label = "Strike!";
+      prompt = "Beat the keeper to the corner before the gap shuts.";
+    }
+    return { kind, flavor, forgiveness, label, prompt, shotType, reachBase, reachGrow, powerFloor, windowMs };
   }
 
   // TIMING / RUN share a sweet-window model.
@@ -97,29 +116,35 @@ export function buildSkillChallenge(
   return { kind, flavor, forgiveness, label, prompt, sweetCenter, sweetWidth };
 }
 
+/**
+ * How far from goal-centre the keeper covers (0..0.5 of the full mouth). Grows as
+ * the closing window runs and as power drops; shared by the scorer and the scene
+ * so the drawn danger zone always matches what's scored.
+ */
+export function keeperReach(challenge: SkillChallenge, timing: number, power: number): number {
+  const base = challenge.reachBase ?? 0.18;
+  const grow = challenge.reachGrow ?? 0.18;
+  const t = clamp(timing, 0, 1);
+  const p = clamp(power, 0, 1);
+  return clamp(base + grow * t + (1 - p) * 0.1, 0.06, 0.47);
+}
+
 /** Score the player's raw input against the challenge → accuracy 0..1. */
 export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): number {
   if (challenge.kind === "AIM") {
     const aim = clamp(input.value, 0, 1);
-    const power = clamp(input.power ?? 0.7, 0, 1);
-    const c = challenge.keeperCenter ?? 0.5;
-    const w = challenge.keeperWidth ?? 0.4;
-    const lo = c - w / 2;
-    const hi = c + w / 2;
+    const power = clamp(input.power ?? 0.5, 0, 1);
+    const timing = clamp(input.timing ?? 1, 0, 1);
+    const floor = challenge.powerFloor ?? 0.25;
 
-    // Power: too soft = easy save, too hard = ballooned over; a broad sweet band.
-    let pf: number;
-    if (power < 0.35) pf = 0.6;
-    else if (power > 0.95) pf = 0.55;
-    else if (power >= 0.5 && power <= 0.9) pf = 1;
-    else pf = 0.85;
+    if (power > 0.97) return 0.18; // ballooned over the bar
+    if (power < floor) return 0.2; // too soft — the keeper gathers it
 
-    if (aim >= lo && aim <= hi) return clamp(0.15 * pf, 0, 0.22); // straight at the keeper
-    const distToPost = Math.min(aim, 1 - aim); // 0 = right against a post
-    let placement = 0.7 + (1 - Math.min(distToPost / 0.5, 1)) * 0.22; // post → 0.92, centre → 0.7
-    const edge = Math.min(Math.abs(aim - lo), Math.abs(aim - hi));
-    if (edge < 0.05) placement *= 0.82; // squeezed right next to the keeper's reach
-    return clamp(placement * pf, 0, 1);
+    const reach = keeperReach(challenge, timing, power);
+    const dist = Math.abs(aim - 0.5); // 0 = down the middle, 0.5 = right on a post
+    if (dist <= reach) return clamp(0.1 + dist * 0.25, 0, 0.32); // within the keeper's reach → saved
+    const margin = dist - reach; // how cleanly you beat the keeper
+    return clamp(0.5 + margin * 1.7 + dist * 0.3, 0, 1);
   }
 
   // TIMING / RUN
