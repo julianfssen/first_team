@@ -90,7 +90,7 @@ const MOUTH_R = 72;
 const SPAN = MOUTH_R - MOUTH_L;
 const AIM_RANGE = 56; // horizontal drag (svg units) to swing post-to-post
 const MAX_PULL_Y = 26; // downward pull for full power
-const CURL_SCALE = 12; // pull-back bow (svg units) for full curl
+const CURL_SCALE = 10; // pull-back bow (svg units) for full curl
 const BOW = 14; // visual flight bend per unit curl
 
 /** Signed curl (-1 left .. +1 right) from how much the pull-back path bowed. */

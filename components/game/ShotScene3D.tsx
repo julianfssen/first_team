@@ -11,7 +11,7 @@ import { clamp } from "@/lib/game/util";
 const ANCHOR = { x: 50, y: 64 };
 const AIM_RANGE = 56;
 const MAX_PULL_Y = 26;
-const CURL_SCALE = 12;
+const CURL_SCALE = 10;
 
 function computeCurl(path: { x: number; y: number }[]): number {
   if (path.length < 3) return 0;
@@ -44,11 +44,11 @@ function bentLanding(aim: number, curl: number): number {
 // --- 3D field constants (metres) ---
 const GOAL_W = 7.32;
 const GOAL_H = 2.44;
-const BALL_R = 0.22;
+const BALL_R = 0.26;
 const START_Z = 9;
-const FLIGHT_MS = 600;
-const BOW3D = 1.3; // lateral swerve from curl
-const ARC = 0.95; // flight height
+const FLIGHT_MS = 780;
+const BOW3D = 2.6; // lateral swerve from curl (visible from the elevated camera)
+const ARC = 1.15; // flight height
 
 type Shot = { aim: number; power: number; curl: number; fireAt: number };
 
@@ -120,13 +120,22 @@ function Keeper({ shot }: { shot: Shot | null }) {
   });
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
-      <mesh position={[0, 0.78, 0]}>
-        <capsuleGeometry args={[0.26, 0.8, 4, 10]} />
+      <mesh position={[0, 0.82, 0]}>
+        <capsuleGeometry args={[0.3, 0.85, 4, 12]} />
         <meshStandardMaterial color="#fbbf24" />
       </mesh>
-      <mesh position={[0, 1.5, 0]}>
-        <sphereGeometry args={[0.22, 14, 14]} />
+      <mesh position={[0, 1.58, 0]}>
+        <sphereGeometry args={[0.26, 16, 16]} />
         <meshStandardMaterial color="#f5c98a" />
+      </mesh>
+      {/* outstretched gloves — a keeper's spread silhouette */}
+      <mesh position={[-0.62, 1.05, 0.05]}>
+        <sphereGeometry args={[0.16, 10, 10]} />
+        <meshStandardMaterial color="#eef4f8" />
+      </mesh>
+      <mesh position={[0.62, 1.05, 0.05]}>
+        <sphereGeometry args={[0.16, 10, 10]} />
+        <meshStandardMaterial color="#eef4f8" />
       </mesh>
     </group>
   );
@@ -161,9 +170,33 @@ function Ball({ shot }: { shot: Shot | null }) {
 function AimMarker({ x }: { x: number }) {
   return (
     <mesh position={[x, GOAL_H * 0.5, 0]} rotation-x={Math.PI / 2}>
-      <torusGeometry args={[0.28, 0.05, 8, 20]} />
+      <torusGeometry args={[0.3, 0.06, 8, 20]} />
       <meshStandardMaterial color="#34d399" emissive="#34d399" emissiveIntensity={0.6} />
     </mesh>
+  );
+}
+
+/** Dotted preview of the (curving) shot path while you're aiming. */
+function Trajectory({ aim, curl }: { aim: number; curl: number }) {
+  const end = landingX(aim, curl);
+  const dots = [];
+  for (let i = 1; i <= 9; i++) {
+    const p = i / 10;
+    dots.push([
+      end * p - curl * BOW3D * Math.sin(Math.PI * p),
+      BALL_R + ARC * Math.sin(Math.PI * p),
+      START_Z + (-START_Z - 0.4) * p,
+    ] as const);
+  }
+  return (
+    <>
+      {dots.map((pt, i) => (
+        <mesh key={i} position={pt}>
+          <sphereGeometry args={[0.09, 8, 8]} />
+          <meshStandardMaterial color="#34d399" emissive="#34d399" emissiveIntensity={0.7} />
+        </mesh>
+      ))}
+    </>
   );
 }
 
@@ -245,8 +278,8 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
     <div className="select-none">
       <div className="relative h-64 w-full overflow-hidden rounded-xl bg-gradient-to-b from-[#0a1a2e] to-[#0c2a18]">
         <Canvas
-          camera={{ position: [0, 1.9, 13], fov: 42 }}
-          onCreated={({ camera }) => camera.lookAt(0, 1, 0)}
+          camera={{ position: [0, 5, 18], fov: 38 }}
+          onCreated={({ camera }) => camera.lookAt(0, 0.6, 3)}
           dpr={[1, 2]}
         >
           <ambientLight intensity={0.75} />
@@ -255,7 +288,12 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
           <Goal />
           <Keeper shot={shot} />
           <Ball shot={shot} />
-          {live && <AimMarker x={liveEnd} />}
+          {live && (
+            <>
+              <Trajectory aim={live.aim} curl={curl} />
+              <AimMarker x={liveEnd} />
+            </>
+          )}
         </Canvas>
         <div
           ref={inputRef}
