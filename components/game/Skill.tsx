@@ -65,8 +65,9 @@ function computeCurl(path: { x: number; y: number }[]): number {
     const d = (vx * (p.y - a.y) - vy * (p.x - a.x)) / len; // perpendicular offset from the chord
     if (Math.abs(d) > Math.abs(dev)) dev = d;
   }
-  // Sign chosen so hooking the pull right curls the ball right — flip if it feels inverted.
-  return Math.max(-1, Math.min(1, -dev / CURL_SCALE));
+  // Pulling/hooking to the right curls the ball right-to-left (and vice versa) —
+  // the natural way to think about putting curl on it.
+  return Math.max(-1, Math.min(1, dev / CURL_SCALE));
 }
 
 /** Where the ball ends up after the bend (matches the engine's bent landing). */
