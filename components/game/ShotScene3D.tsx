@@ -10,7 +10,7 @@ function Ink() {
   return <Outlines thickness={OUTLINE.thickness} color={OUTLINE.color} />;
 }
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
-import { scoreSkillInput, tierFromAccuracy } from "@/lib/game/skillEngine";
+import { scoreSkillInput, tierFromAccuracy, keeperGuess } from "@/lib/game/skillEngine";
 import { sfx, haptics } from "@/lib/ui/fx";
 import { rng } from "@/lib/game/rng";
 import { clamp } from "@/lib/game/util";
@@ -235,8 +235,20 @@ function Crowd() {
   );
 }
 
-function Keeper({ shot }: { shot: Shot | null }) {
+function Keeper({
+  shot,
+  guessDir,
+  guessHigh,
+  windowT,
+}: {
+  shot: Shot | null;
+  guessDir: number;
+  guessHigh: boolean;
+  windowT: number;
+}) {
   const ref = useRef<THREE.Group>(null);
+  const guessX = guessDir * 0.3 * GOAL_W; // the corner he's committing to (~±2.2m)
+  const guessY = guessHigh ? GOAL_H * 0.62 : 0.4;
   useFrame((state) => {
     const g = ref.current;
     if (!g) return;
@@ -244,21 +256,29 @@ function Keeper({ shot }: { shot: Shot | null }) {
     // react to the strike (after contact), not the release
     const e = shot ? performance.now() - shot.fireAt - CONTACT_MS : -1;
     if (!shot || e < 0) {
-      // set and alive on his toes
-      g.position.set(Math.sin(tt * 1.7) * 0.07, Math.abs(Math.sin(tt * 3.2)) * 0.04, 0.3);
-      g.rotation.set(0, 0, Math.sin(tt * 1.7) * 0.05);
+      // pre-shot: alive on his toes + a growing TELEGRAPH lean toward his guess
+      // (subtle early, readable late) so going the other way is a skill, not luck
+      const commit = easeInOutCubic(clamp(windowT, 0, 1)) * 0.6;
+      g.position.set(
+        Math.sin(tt * 1.7) * 0.06 + guessX * 0.16 * commit,
+        Math.abs(Math.sin(tt * 3.2)) * 0.04,
+        0.3,
+      );
+      g.rotation.set(0, 0, Math.sin(tt * 1.7) * 0.05 - guessDir * 0.18 * commit);
       return;
     }
     const dp = clamp(e / 540, 0, 1);
-    const dir = Math.sign(shot.goalX || 1);
+    const saveKind = shot.kind === "CATCH" || shot.kind === "PARRY" || shot.kind === "POST";
+    // dive to the ball on a save; commit the WRONG way (toward his guess) on a goal/miss
+    const targetX = saveKind ? shot.goalX : guessX;
+    const targetY = saveKind ? shot.goalY : guessY;
+    const dir = Math.sign(targetX || guessDir);
     const ant = Math.min(dp / 0.14, 1); // crouch + tiny counter-step
     const launch = easeOutCubic(clamp((dp - 0.14) / 0.86, 0, 1)); // push off, then extend
-    // reach the ball on a save; fall just short on a goal; token dive on miss/over
-    const reachF =
-      shot.kind === "CATCH" || shot.kind === "PARRY" ? 1.0 : shot.kind === "POST" ? 0.86 : shot.kind === "GOAL" ? 0.5 : 0.35;
-    // leap up for high shots, stay low for low ones (toward the ball's height)
-    const leapH = shot.kind === "OVER" ? 1.0 : clamp(shot.goalY * 0.55, 0.12, 1.25);
-    g.position.x = -dir * 0.14 * ant * (1 - launch) + shot.goalX * reachF * launch;
+    const reachF = saveKind ? 1.0 : 0.92; // reaches the ball on a save; full (wrong-way) commit on a goal
+    // leap up for high targets, sprawl low for low ones
+    const leapH = clamp(targetY * 0.55, 0.12, 1.25);
+    g.position.x = -dir * 0.14 * ant * (1 - launch) + targetX * reachF * launch;
     g.position.y = -0.16 * ant * (1 - launch) + leapH * Math.sin(Math.PI * launch);
     g.position.z = 0.3;
     g.rotation.z = -dir * 1.4 * launch;
@@ -528,6 +548,7 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
   const [t, setT] = useState(0);
 
   const windowMs = challenge.windowMs ?? 1700;
+  const guess = useMemo(() => keeperGuess(challenge), [challenge]);
 
   function toLocal(e: React.PointerEvent): { x: number; y: number } {
     const r = inputRef.current?.getBoundingClientRect();
@@ -617,7 +638,7 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
           <Pitch />
           <Goal />
           <Net shot={shot} />
-          <Keeper shot={shot} />
+          <Keeper shot={shot} guessDir={guess.dir} guessHigh={guess.high} windowT={t} />
           <Striker shot={shot} />
           <Ball shot={shot} />
           {live && (

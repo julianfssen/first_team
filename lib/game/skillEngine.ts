@@ -129,6 +129,22 @@ export function keeperReach(challenge: SkillChallenge, timing: number, power: nu
   return clamp(base + grow * t + (1 - p) * 0.06, 0.06, 0.45);
 }
 
+/**
+ * The keeper commits to a corner this shot — a side (and sometimes high) he
+ * favours. Deterministic per challenge (so it varies shot-to-shot but the scene
+ * and the scorer agree), and telegraphed in the scene so it's a read, not a coin
+ * flip: go where he isn't.
+ */
+export function keeperGuess(challenge: SkillChallenge): { dir: number; high: boolean } {
+  const r = rng(
+    "keepguess",
+    Math.round((challenge.reachBase ?? 0.15) * 1000),
+    challenge.windowMs ?? 1700,
+    Math.round((challenge.reachGrow ?? 0.15) * 1000),
+  );
+  return { dir: r.float() < 0.5 ? -1 : 1, high: r.chance(0.4) };
+}
+
 /** Score the player's raw input against the challenge → accuracy 0..1. */
 export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): number {
   if (challenge.kind === "AIM") {
@@ -146,15 +162,28 @@ export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): n
     const fx = clamp(bx, 0, 1);
     const fy = clamp(aimY, 0, 1);
 
-    // The keeper covers an elliptical region (a touch below centre); corners are gaps.
-    const reachX = Math.max(0.06, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05);
-    const reachY = clamp(reachX * 1.25, 0.16, 0.62);
-    const ndx = (fx - 0.5) / reachX;
-    const ndy = (fy - 0.4) / reachY;
-    const d = Math.hypot(ndx, ndy);
-    if (d <= 1) return clamp(0.1 + d * 0.2, 0, 0.34); // inside the keeper's reach → saved
+    // Per-shot execution variance (deterministic from the inputs, so the scene
+    // and the engine agree, but a marginal shot can go either way).
+    const noise = rng(
+      "aimvar",
+      Math.round(input.value * 1000),
+      Math.round(aimY * 1000),
+      Math.round((curl + 1) * 1000),
+      Math.round(timing * 1000),
+    ).noise(0.18);
+
+    const reachX = Math.max(0.07, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05) * (1 + noise);
+    const reachY = clamp(reachX * 1.4, 0.22, 0.7);
+
+    // The keeper COMMITS to a guessed corner this shot (covered), plus a tighter
+    // central reflex. You score by going where he isn't — corners aren't free.
+    const { dir, high } = keeperGuess(challenge);
+    const dGuess = Math.hypot((fx - (0.5 + dir * 0.3)) / (reachX * 1.2), (fy - (high ? 0.62 : 0.34)) / reachY);
+    const dCentre = Math.hypot((fx - 0.5) / (reachX * 0.85), (fy - 0.36) / (reachY * 0.85));
+    const d = Math.min(dGuess, dCentre);
+    if (d <= 1) return clamp(0.1 + d * 0.2, 0, 0.34); // within the keeper's reach → saved
     const margin = d - 1;
-    const cornerBonus = (Math.abs(fx - 0.5) / 0.5) * 0.14 + fy * 0.12; // wide + high = best
+    const cornerBonus = (Math.abs(fx - 0.5) / 0.5) * 0.14 + fy * 0.1; // wide + high = best
     return clamp(0.5 + margin * 0.42 + cornerBonus + Math.abs(curl) * 0.04, 0, 1);
   }
 

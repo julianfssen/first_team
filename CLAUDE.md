@@ -118,14 +118,21 @@ is sometimes the wrong one). Built in stages:
   beats their reach) — aim near the keeper and curl it into the corner — but
   over-bending sails wide. Aim guide + ball flight render the bend.
 
-  **Shot model (reworked for difficulty):** the keeper sits centrally and CLOSES
-  the gap over a short shot-clock (`windowMs`) — `keeperReach()` (shared by the
-  scene and the scorer so the drawn danger zone == what's scored) grows with
-  elapsed time and with low power, shrinks with finishing. You must beat the
-  keeper out to a *corner*, with enough power (a `powerFloor`, and a ceiling that
-  sails it over), before the window shuts; dithering auto-fires a weak effort.
-  Seeded `shotType` (NORMAL / ONE_ON_ONE / LONG_RANGE) varies window, reach
-  growth and power needs. No more "aim at the labelled green gap".
+  **Shot model — 2D spot-aiming + a committing keeper:** you drag to a *spot in
+  the goal* (sideways = `SkillInput.value`, up = `aimY` height; over the top or
+  outside the posts = a miss). Power is auto (it was the weakest axis). The keeper
+  no longer just sits centrally: each shot he **commits to a guessed corner**
+  (`keeperGuess(challenge)`, deterministic per shot → varies shot-to-shot, shared
+  by scene + scorer) and covers *that* region (`dGuess`) plus a tighter central
+  reflex (`dCentre`); you score by placing it where he *isn't*. He **telegraphs**
+  the guess in the scene (a growing lean toward his side as the shot-clock runs)
+  so going the other way is a read, not a coin-flip, and on a goal he dives the
+  *wrong* way while on a save he dives to the ball (varied dives, low sprawl vs
+  high leap from the target height). `keeperReach()` still grows with elapsed
+  time / low power and shrinks with finishing. Per-shot **execution variance**
+  (seeded `noise` keyed on the inputs, so scene == scorer) means a marginal shot
+  can go either way. Seeded `shotType` (NORMAL / ONE_ON_ONE / LONG_RANGE) varies
+  window, reach growth and power needs. No more "aim at the labelled green gap".
 - **Stage 4 — done:** consequences & juice. In-match **substitution risk**
   (poor + gassed + low coach trust late → hooked early: moments skipped, fewer
   minutes, coach-trust/morale hit) and the impact-sub reward; in-match

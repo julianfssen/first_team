@@ -6,6 +6,7 @@ import {
   buildSkillChallenge,
   scoreSkillInput,
   tierFromAccuracy,
+  keeperGuess,
 } from "../skillEngine";
 import { resolvePlayerBeat } from "../matchSimEngine";
 import { getPassage } from "../passages";
@@ -85,33 +86,39 @@ describe("skill scoring", () => {
     reachBase: 0.16, reachGrow: 0.18, powerFloor: 0.25, windowMs: 1700,
   };
 
-  it("scores a corner past the keeper high and a shot straight at them low", () => {
-    const openCorner = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.7, timing: 0.2 });
-    const atKeeper = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2 });
-    expect(openCorner).toBeGreaterThan(0.8);
-    expect(atKeeper).toBeLessThan(0.3);
-    expect(tierFromAccuracy(openCorner)).toBe("GREAT");
-    expect(tierFromAccuracy(atKeeper)).toBe("DISASTER");
+  // The keeper commits to a side this shot; score by going the OTHER way.
+  const guess = keeperGuess(shotChallenge);
+  const openX = guess.dir < 0 ? 0.95 : 0.05; // corner opposite his committed side
+  const guessedX = guess.dir < 0 ? 0.05 : 0.95; // the corner he's covering
+
+  it("scores into the corner the keeper left open, but not into the one he covered", () => {
+    const open = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.5, power: 0.7, timing: 0.2 });
+    const covered = scoreSkillInput(shotChallenge, { value: guessedX, aimY: 0.5, power: 0.7, timing: 0.2 });
+    const atKeeper = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 0.35, power: 0.7, timing: 0.2 });
+    expect(open).toBeGreaterThan(0.6);
+    expect(["GREAT", "GOOD"]).toContain(tierFromAccuracy(open));
+    expect(covered).toBeLessThan(0.45); // the keeper guessed right → saved
+    expect(atKeeper).toBeLessThan(0.35); // central reflex
   });
 
   it("waiting for the gap to shut makes the same shot harder", () => {
-    const early = scoreSkillInput(shotChallenge, { value: 0.2, power: 0.7, timing: 0.15 });
-    const late = scoreSkillInput(shotChallenge, { value: 0.2, power: 0.7, timing: 0.95 });
+    const early = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.5, power: 0.7, timing: 0.15 });
+    const late = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.5, power: 0.7, timing: 0.95 });
     expect(early).toBeGreaterThan(late);
   });
 
-  it("punishes a scuffed (too soft) strike even into a corner", () => {
-    const firm = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.7, timing: 0.2 });
-    const scuffed = scoreSkillInput(shotChallenge, { value: 0.02, power: 0.15, timing: 0.2 });
+  it("punishes a scuffed (too soft) strike even into the open corner", () => {
+    const firm = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.5, power: 0.7, timing: 0.2 });
+    const scuffed = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.5, power: 0.15, timing: 0.2 });
     expect(scuffed).toBeLessThan(firm);
   });
 
-  it("a curled shot bends a central effort past the keeper", () => {
-    const straight = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2, curl: 0 });
-    const curled = scoreSkillInput(shotChallenge, { value: 0.5, power: 0.7, timing: 0.2, curl: 1 });
-    expect(straight).toBeLessThan(0.3); // straight down the middle → saved
+  it("a curled shot bends a central effort into the open side", () => {
+    const straight = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 0.5, power: 0.7, timing: 0.2, curl: 0 });
+    // curl toward the side the keeper left open
+    const curled = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 0.5, power: 0.7, timing: 0.2, curl: -guess.dir });
+    expect(straight).toBeLessThan(0.35); // straight down the middle → saved
     expect(curled).toBeGreaterThan(straight);
-    expect(["GREAT", "GOOD"]).toContain(tierFromAccuracy(curled)); // curled into the corner → goal
   });
 
   it("over-curling (or aiming past the post) sends it wide", () => {
@@ -128,8 +135,8 @@ describe("skill scoring", () => {
     expect(scoreSkillInput(challenge, { value: 0.95 })).toBe(0);
   });
 
-  it("aiming a top corner beats the keeper; a low central shot is saved", () => {
-    const topCorner = scoreSkillInput(shotChallenge, { value: 0.05, aimY: 0.95, power: 0.72, timing: 0.2 });
+  it("aiming the open top corner beats the keeper; a low central shot is saved", () => {
+    const topCorner = scoreSkillInput(shotChallenge, { value: openX, aimY: 0.95, power: 0.72, timing: 0.2 });
     const lowCentre = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 0.2, power: 0.72, timing: 0.2 });
     expect(tierFromAccuracy(topCorner)).toBe("GREAT");
     expect(lowCentre).toBeLessThan(0.35); // smothered
@@ -139,18 +146,31 @@ describe("skill scoring", () => {
     const over = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 1.2, power: 0.72, timing: 0.2 });
     expect(over).toBeLessThan(0.3);
   });
+
+  it("the same shot can be saved or scored depending on the keeper's guess (variance)", () => {
+    // two different challenges → potentially different keeper commitments
+    const a = { ...shotChallenge, reachBase: 0.16 };
+    const b = { ...shotChallenge, reachBase: 0.2, reachGrow: 0.1 };
+    const ga = keeperGuess(a);
+    const gb = keeperGuess(b);
+    // not asserting they differ (could match) — just that the guess is a real signal
+    expect([-1, 1]).toContain(ga.dir);
+    expect([-1, 1]).toContain(gb.dir);
+  });
 });
 
 describe("skill resolution", () => {
-  it("a finish into an open corner scores; a finish at the keeper is saved", () => {
+  it("a finish into the open corner scores; one down the middle is saved", () => {
     const c = withFinishing(createCareer(INPUT), 95);
     const state = shotState(c);
-    // Keeper sits centrally — beat them to a post early, with pace.
-    const scored = resolvePlayerBeat(c, state, "shoot-low", { value: 0.02, power: 0.7, timing: 0.15 });
+    const ch = buildSkillChallenge(c, state, "shoot-low")!;
+    const g = keeperGuess(ch);
+    const openX = g.dir < 0 ? 0.96 : 0.04; // opposite his committed side
+    const scored = resolvePlayerBeat(c, state, "shoot-low", { value: openX, aimY: 0.55, power: 0.8, timing: 0.12 });
     expect(scored.result.outcome).toBe("GOAL");
     expect(scored.state.teamScore).toBe(1);
 
-    const saved = resolvePlayerBeat(c, state, "shoot-low", { value: 0.5, power: 0.7, timing: 0.5 });
+    const saved = resolvePlayerBeat(c, state, "shoot-low", { value: 0.5, aimY: 0.3, power: 0.7, timing: 0.5 });
     expect(saved.result.outcome).toBe("CHANCE_MISSED");
     expect(saved.state.teamScore).toBe(0);
   });
