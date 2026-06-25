@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Component, ReactNode, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { motion } from "motion/react";
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
 import { keeperReach } from "@/lib/game/skillEngine";
@@ -9,6 +10,33 @@ import { cx } from "@/components/ui";
 import { clamp } from "@/lib/game/util";
 
 type SceneProps = { challenge: SkillChallenge; onComplete: (input: SkillInput) => void };
+
+/** Lazy-load the WebGL shot scene so three.js only ships when it's actually used. */
+const ShotScene3D = dynamic(() => import("./ShotScene3D").then((m) => m.ShotScene3D), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full animate-pulse rounded-xl bg-[var(--surface-2)]" />,
+});
+
+function supportsWebGL(): boolean {
+  if (typeof document === "undefined") return false;
+  try {
+    const c = document.createElement("canvas");
+    return !!(window.WebGLRenderingContext && (c.getContext("webgl") || c.getContext("experimental-webgl")));
+  } catch {
+    return false;
+  }
+}
+
+/** If the 3D scene errors (or fails to load), fall back to the 2D scene. */
+class SceneBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
 
 export function SkillChallengeView({
   challenge,
@@ -19,6 +47,22 @@ export function SkillChallengeView({
   onComplete: (input: SkillInput) => void;
   onCancel: () => void;
 }) {
+  const [use3D] = useState(() => supportsWebGL());
+
+  let scene: ReactNode;
+  if (challenge.flavor === "SHOT") {
+    const flat = <ShotScene challenge={challenge} onComplete={onComplete} />;
+    scene = use3D ? (
+      <SceneBoundary fallback={flat}>
+        <ShotScene3D challenge={challenge} onComplete={onComplete} />
+      </SceneBoundary>
+    ) : (
+      flat
+    );
+  } else {
+    scene = <TimingScene challenge={challenge} onComplete={onComplete} />;
+  }
+
   return (
     <div className="animate-pop rounded-2xl border border-[var(--accent)]/40 bg-[var(--surface-2)] p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -28,11 +72,7 @@ export function SkillChallengeView({
         </button>
       </div>
       <p className="mb-2 text-xs text-[var(--muted)]">{challenge.prompt}</p>
-      {challenge.flavor === "SHOT" ? (
-        <ShotScene challenge={challenge} onComplete={onComplete} />
-      ) : (
-        <TimingScene challenge={challenge} onComplete={onComplete} />
-      )}
+      {scene}
     </div>
   );
 }

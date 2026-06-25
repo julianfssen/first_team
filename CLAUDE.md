@@ -96,6 +96,15 @@ is sometimes the wrong one). Built in stages:
   outcome pipeline. Falls back to the RNG roll if no input (back-compatible).
   Skill kind/flavor inferred from the choice's `check`.
 
+  **True 3D shot (WebGL):** `components/game/ShotScene3D.tsx` renders the shot in
+  real 3D via react-three-fiber/three (low-poly pitch/goal/keeper/ball, camera
+  behind the striker, ball flight with curl + arc in 3D, diving keeper). Same
+  drag→aim/power/curl input + same `SkillInput`, so the engine/scoring/tests are
+  unchanged. It's **lazy-loaded** (`next/dynamic`, ssr:false — three ships in its
+  own async chunk, not the initial bundle) and only used when WebGL is available;
+  otherwise (and on any 3D error, via an error boundary) it falls back to the 2D
+  `ShotScene`. jsdom/SSR → 2D. Tackle/save/through-ball stay 2D.
+
   **Game feel:** `lib/ui/fx.ts` synthesises SFX at runtime via Web Audio (no
   asset files) — kick/goal/save/concede/whistle — plus `navigator.vibrate`
   haptics, gated by one persisted mute toggle (on the hub), all safe no-ops on
