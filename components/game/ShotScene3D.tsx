@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
 import { sfx, haptics } from "@/lib/ui/fx";
+import { rng } from "@/lib/game/rng";
 import { clamp } from "@/lib/game/util";
 
 // --- input math (mirrors the 2D ShotScene so both feel identical) ---
@@ -59,14 +60,14 @@ function landingX(aim: number, curl: number): number {
 function Pitch() {
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position={[0, 0, 2]} receiveShadow>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0, 2]}>
         <planeGeometry args={[80, 80]} />
-        <meshStandardMaterial color="#1f7a44" />
+        <meshToonMaterial color="#2a9d54" />
       </mesh>
-      {[-2, 1, 4, 7].map((z, i) => (
+      {[-4, -1, 2, 5, 8].map((z, i) => (
         <mesh key={z} rotation-x={-Math.PI / 2} position={[0, 0.01, z]}>
-          <planeGeometry args={[80, 1.6]} />
-          <meshStandardMaterial color={i % 2 ? "#1c6f3e" : "#23874c"} />
+          <planeGeometry args={[80, 1.8]} />
+          <meshToonMaterial color={i % 2 ? "#249049" : "#31b063"} />
         </mesh>
       ))}
     </group>
@@ -74,30 +75,68 @@ function Pitch() {
 }
 
 function Goal() {
-  const post = <meshStandardMaterial color="#f2f5f8" />;
+  const post = <meshToonMaterial color="#f4f7fa" />;
   return (
     <group position={[0, 0, 0]}>
       <mesh position={[-GOAL_W / 2, GOAL_H / 2, 0]}>
-        <cylinderGeometry args={[0.07, 0.07, GOAL_H, 10]} />
+        <cylinderGeometry args={[0.08, 0.08, GOAL_H, 10]} />
         {post}
       </mesh>
       <mesh position={[GOAL_W / 2, GOAL_H / 2, 0]}>
-        <cylinderGeometry args={[0.07, 0.07, GOAL_H, 10]} />
+        <cylinderGeometry args={[0.08, 0.08, GOAL_H, 10]} />
         {post}
       </mesh>
       <mesh position={[0, GOAL_H, 0]} rotation-z={Math.PI / 2}>
-        <cylinderGeometry args={[0.07, 0.07, GOAL_W + 0.14, 10]} />
+        <cylinderGeometry args={[0.08, 0.08, GOAL_W + 0.16, 10]} />
         {post}
       </mesh>
       {/* net */}
       <mesh position={[0, GOAL_H / 2, -0.7]}>
         <planeGeometry args={[GOAL_W, GOAL_H]} />
-        <meshStandardMaterial color="#ffffff" transparent opacity={0.1} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#ffffff" transparent opacity={0.12} side={THREE.DoubleSide} wireframe />
       </mesh>
-      <mesh position={[0, GOAL_H, -0.35]} rotation-x={-Math.PI / 2.4}>
-        <planeGeometry args={[GOAL_W, 0.9]} />
-        <meshStandardMaterial color="#ffffff" transparent opacity={0.08} side={THREE.DoubleSide} />
+    </group>
+  );
+}
+
+/** Speckled crowd on a dark stand behind the goal. */
+function Crowd() {
+  const { pos, col } = useMemo(() => {
+    const N = 800;
+    const pos = new Float32Array(N * 3);
+    const col = new Float32Array(N * 3);
+    const palette = [
+      [0.92, 0.25, 0.25], [0.22, 0.45, 0.92], [0.96, 0.85, 0.25],
+      [0.92, 0.92, 0.96], [0.25, 0.82, 0.45], [0.95, 0.55, 0.2],
+    ];
+    const r = rng("crowd-3d"); // deterministic (pure) instead of Math.random
+    for (let i = 0; i < N; i++) {
+      const x = r.range(-19, 19);
+      const y = 1.8 + r.float() * 7.5;
+      const z = -8 - r.float() * 6 - Math.abs(x) * 0.12;
+      pos[i * 3] = x;
+      pos[i * 3 + 1] = y;
+      pos[i * 3 + 2] = z;
+      const c = r.pick(palette);
+      col[i * 3] = c[0];
+      col[i * 3 + 1] = c[1];
+      col[i * 3 + 2] = c[2];
+    }
+    return { pos, col };
+  }, []);
+  return (
+    <group>
+      <mesh position={[0, 5, -12.5]} rotation-x={0.35}>
+        <planeGeometry args={[48, 13]} />
+        <meshBasicMaterial color="#0b1220" />
       </mesh>
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[pos, 3]} />
+          <bufferAttribute attach="attributes-color" args={[col, 3]} />
+        </bufferGeometry>
+        <pointsMaterial size={0.24} vertexColors sizeAttenuation />
+      </points>
     </group>
   );
 }
@@ -109,33 +148,102 @@ function Keeper({ shot }: { shot: Shot | null }) {
     if (!g) return;
     if (!shot) {
       g.position.x = 0;
+      g.position.y = 0;
       g.rotation.z = 0;
       return;
     }
     const p = clamp((performance.now() - shot.fireAt) / FLIGHT_MS, 0, 1);
     const end = landingX(shot.aim, shot.curl);
     g.position.x = end * 0.5 * p;
-    g.position.y = -0.15 * Math.sin(Math.PI * p);
-    g.rotation.z = -Math.sign(end || 1) * 0.7 * p;
+    g.position.y = -0.2 * Math.sin(Math.PI * p);
+    g.rotation.z = -Math.sign(end || 1) * 0.8 * p;
   });
+  const kit = <meshToonMaterial color="#fbbf24" />;
+  const dark = <meshToonMaterial color="#1b3a8a" />;
+  const skin = <meshToonMaterial color="#e8b48a" />;
+  const glove = <meshToonMaterial color="#eef4f8" />;
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
-      <mesh position={[0, 0.82, 0]}>
-        <capsuleGeometry args={[0.3, 0.85, 4, 12]} />
-        <meshStandardMaterial color="#fbbf24" />
+      <mesh position={[-0.15, 0.32, 0]}>
+        <capsuleGeometry args={[0.11, 0.42, 4, 8]} />
+        {dark}
       </mesh>
-      <mesh position={[0, 1.58, 0]}>
-        <sphereGeometry args={[0.26, 16, 16]} />
-        <meshStandardMaterial color="#f5c98a" />
+      <mesh position={[0.15, 0.32, 0]}>
+        <capsuleGeometry args={[0.11, 0.42, 4, 8]} />
+        {dark}
       </mesh>
-      {/* outstretched gloves — a keeper's spread silhouette */}
-      <mesh position={[-0.62, 1.05, 0.05]}>
-        <sphereGeometry args={[0.16, 10, 10]} />
-        <meshStandardMaterial color="#eef4f8" />
+      <mesh position={[0, 0.95, 0]}>
+        <capsuleGeometry args={[0.27, 0.6, 4, 10]} />
+        {kit}
       </mesh>
-      <mesh position={[0.62, 1.05, 0.05]}>
-        <sphereGeometry args={[0.16, 10, 10]} />
-        <meshStandardMaterial color="#eef4f8" />
+      {/* raised arms (making himself big) + gloves */}
+      <mesh position={[-0.42, 1.1, 0.05]} rotation-z={0.7}>
+        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
+        {kit}
+      </mesh>
+      <mesh position={[0.42, 1.1, 0.05]} rotation-z={-0.7}>
+        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
+        {kit}
+      </mesh>
+      <mesh position={[-0.66, 1.34, 0.08]}>
+        <sphereGeometry args={[0.14, 10, 10]} />
+        {glove}
+      </mesh>
+      <mesh position={[0.66, 1.34, 0.08]}>
+        <sphereGeometry args={[0.14, 10, 10]} />
+        {glove}
+      </mesh>
+      <mesh position={[0, 1.52, 0]}>
+        <sphereGeometry args={[0.22, 16, 16]} />
+        {skin}
+      </mesh>
+    </group>
+  );
+}
+
+/** The shooter, foreground, seen from behind — swings a leg through on the strike. */
+function Striker({ shot }: { shot: Shot | null }) {
+  const legRef = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = legRef.current;
+    if (!g) return;
+    if (!shot) {
+      g.rotation.x = -0.2;
+      return;
+    }
+    const p = clamp((performance.now() - shot.fireAt) / 240, 0, 1);
+    g.rotation.x = -0.2 - Math.sin(Math.PI * p) * 1.6; // wind up + swing through
+  });
+  const kit = <meshToonMaterial color="#2bd4a8" />;
+  const dark = <meshToonMaterial color="#1f2937" />;
+  const skin = <meshToonMaterial color="#e8b48a" />;
+  return (
+    <group position={[-0.95, 0, 9.9]}>
+      <mesh position={[0.16, 0.34, 0]}>
+        <capsuleGeometry args={[0.12, 0.5, 4, 8]} />
+        {dark}
+      </mesh>
+      <group ref={legRef} position={[-0.1, 0.72, 0]}>
+        <mesh position={[0, -0.32, 0.02]}>
+          <capsuleGeometry args={[0.12, 0.5, 4, 8]} />
+          {dark}
+        </mesh>
+      </group>
+      <mesh position={[0, 1.02, 0]}>
+        <capsuleGeometry args={[0.24, 0.6, 4, 10]} />
+        {kit}
+      </mesh>
+      <mesh position={[-0.32, 1.06, 0]} rotation-z={0.3}>
+        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
+        {kit}
+      </mesh>
+      <mesh position={[0.32, 1.06, 0]} rotation-z={-0.3}>
+        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
+        {kit}
+      </mesh>
+      <mesh position={[0, 1.62, 0]}>
+        <sphereGeometry args={[0.2, 16, 16]} />
+        {skin}
       </mesh>
     </group>
   );
@@ -162,7 +270,7 @@ function Ball({ shot }: { shot: Shot | null }) {
   return (
     <mesh ref={ref}>
       <sphereGeometry args={[BALL_R, 18, 18]} />
-      <meshStandardMaterial color="#ffffff" />
+      <meshToonMaterial color="#ffffff" />
     </mesh>
   );
 }
@@ -282,11 +390,14 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
           onCreated={({ camera }) => camera.lookAt(0, 0.6, 3)}
           dpr={[1, 2]}
         >
-          <ambientLight intensity={0.75} />
-          <directionalLight position={[5, 12, 8]} intensity={1.1} />
+          <fog attach="fog" args={["#0a1424", 20, 46]} />
+          <ambientLight intensity={0.85} />
+          <directionalLight position={[5, 12, 8]} intensity={1.0} />
+          <Crowd />
           <Pitch />
           <Goal />
           <Keeper shot={shot} />
+          <Striker shot={shot} />
           <Ball shot={shot} />
           {live && (
             <>
