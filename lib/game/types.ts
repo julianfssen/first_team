@@ -463,12 +463,12 @@ export type SkillChallenge = {
 
 /**
  * The player's raw input.
- * AIM: value = aim across the goal (0..1), power = strike power (0..1),
- *      timing = fraction of the closing window elapsed at release (0..1),
- *      curl = late swerve, -1 (left) .. +1 (right).
+ * AIM: value = aim across the goal (0..1), aimY = height (0 ground .. 1 crossbar),
+ *      power = strike power (0..1), timing = fraction of the closing window
+ *      elapsed at release (0..1), curl = late swerve, -1 (left) .. +1 (right).
  * TIMING / RUN: value = the moment committed (0..1).
  */
-export type SkillInput = { value: number; power?: number; timing?: number; curl?: number };
+export type SkillInput = { value: number; aimY?: number; power?: number; timing?: number; curl?: number };
 
 /** A moment instantiated for a specific match. */
 export type MatchMoment = {

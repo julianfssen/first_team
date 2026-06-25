@@ -132,25 +132,30 @@ export function keeperReach(challenge: SkillChallenge, timing: number, power: nu
 /** Score the player's raw input against the challenge → accuracy 0..1. */
 export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): number {
   if (challenge.kind === "AIM") {
-    const power = clamp(input.power ?? 0.5, 0, 1);
+    const power = clamp(input.power ?? 0.72, 0, 1);
     const timing = clamp(input.timing ?? 1, 0, 1);
     const curl = clamp(input.curl ?? 0, -1, 1);
     const floor = challenge.powerFloor ?? 0.25;
-
-    if (power > 0.97) return 0.18; // ballooned over the bar
     if (power < floor) return 0.2; // too soft — the keeper gathers it
 
-    // aim 0..1 spans post-to-post; aiming/curling beyond the frame misses wide.
-    const bent = clamp(input.value, -0.3, 1.3) + curl * 0.25;
-    if (bent < -0.06 || bent > 1.06) return 0.15; // wide of the post — a miss
-    const finalAim = clamp(bent, 0, 1);
+    // 2D spot: x across the goal (curl bends it), y is height (0 ground .. 1 bar).
+    const aimY = clamp(input.aimY ?? 0.5, -0.3, 1.3);
+    if (aimY > 1.06) return 0.15; // over the bar
+    const bx = clamp(input.value, -0.3, 1.3) + curl * 0.25;
+    if (bx < -0.06 || bx > 1.06) return 0.15; // wide of the post
+    const fx = clamp(bx, 0, 1);
+    const fy = clamp(aimY, 0, 1);
 
-    // A curled shot beats the keeper a touch — they can't adjust to late swerve.
-    const reach = Math.max(0.05, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05);
-    const dist = Math.abs(finalAim - 0.5); // 0 = down the middle, 0.5 = right on a post
-    if (dist <= reach) return clamp(0.1 + dist * 0.25, 0, 0.32); // within the keeper's reach → saved
-    const margin = dist - reach; // how cleanly you beat the keeper
-    return clamp(0.5 + margin * 1.7 + dist * 0.3 + Math.abs(curl) * 0.05, 0, 1);
+    // The keeper covers an elliptical region (a touch below centre); corners are gaps.
+    const reachX = Math.max(0.06, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05);
+    const reachY = clamp(reachX * 1.25, 0.16, 0.62);
+    const ndx = (fx - 0.5) / reachX;
+    const ndy = (fy - 0.4) / reachY;
+    const d = Math.hypot(ndx, ndy);
+    if (d <= 1) return clamp(0.1 + d * 0.2, 0, 0.34); // inside the keeper's reach → saved
+    const margin = d - 1;
+    const cornerBonus = (Math.abs(fx - 0.5) / 0.5) * 0.14 + fy * 0.12; // wide + high = best
+    return clamp(0.5 + margin * 0.42 + cornerBonus + Math.abs(curl) * 0.04, 0, 1);
   }
 
   // TIMING / RUN

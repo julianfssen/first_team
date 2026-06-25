@@ -15,10 +15,10 @@ import { sfx, haptics } from "@/lib/ui/fx";
 import { rng } from "@/lib/game/rng";
 import { clamp } from "@/lib/game/util";
 
-// --- input math (mirrors the 2D ShotScene so both feel identical) ---
+// --- input math ---
 const ANCHOR = { x: 50, y: 64 };
-const AIM_RANGE = 56;
-const MAX_PULL_Y = 26;
+const AIM_RANGE_X = 56; // sideways drag to swing post-to-post
+const AIM_RANGE_Y = 46; // upward drag to raise the aim to the crossbar
 const CURL_SCALE = 10;
 
 function computeCurl(path: { x: number; y: number }[]): number {
@@ -37,13 +37,13 @@ function computeCurl(path: { x: number; y: number }[]): number {
   }
   return clamp(dev / CURL_SCALE, -1, 1);
 }
-function aimPower(p: { x: number; y: number }): { aim: number; power: number } {
+/** Drag toward the spot in the goal: sideways = left/right, up = higher. */
+function aimSpot(p: { x: number; y: number }): { aimX: number; aimY: number } {
   const dx = p.x - ANCHOR.x;
-  const pull = Math.max(0, p.y - ANCHOR.y);
+  const up = ANCHOR.y - p.y; // dragging up aims higher
   return {
-    // allow aiming past the posts so over-doing it misses wide
-    aim: clamp(0.5 + dx / AIM_RANGE, -0.2, 1.2),
-    power: clamp(pull / MAX_PULL_Y, 0, 1),
+    aimX: clamp(0.5 + dx / AIM_RANGE_X, -0.2, 1.2), // can overshoot the posts → wide
+    aimY: clamp(up / AIM_RANGE_Y, -0.1, 1.25), // 0 ground .. 1 crossbar .. >1 over
   };
 }
 
@@ -55,20 +55,25 @@ const START_Z = 9;
 const CONTACT_MS = 300; // run-up + backswing before the foot connects
 const FLIGHT_MS = 720; // ball travel after contact
 const BOW3D = 2.6; // lateral swerve from curl (visible from the elevated camera)
-const ARC = 1.15; // flight height
 
 type ResultKind = "GOAL" | "CATCH" | "PARRY" | "POST" | "OVER" | "WIDE";
-type Shot = { aim: number; power: number; curl: number; fireAt: number; kind: ResultKind; goalX: number };
+type Shot = {
+  curl: number;
+  fireAt: number;
+  kind: ResultKind;
+  goalX: number; // metres across (can be beyond the posts)
+  goalY: number; // metres high
+};
 
-/** Where the ball ends up across the goal, in metres (can be beyond the posts). */
-function landingX(aim: number, curl: number): number {
-  return (clamp(aim + curl * 0.25, -0.3, 1.3) - 0.5) * GOAL_W;
+/** Ball's across-goal position in metres (can be beyond the posts). */
+function landingX(aimX: number, curl: number): number {
+  return (clamp(aimX + curl * 0.25, -0.3, 1.3) - 0.5) * GOAL_W;
 }
 
 /** Decide the visual outcome so the animation MATCHES the engine's result. */
 function resolveKind(challenge: SkillChallenge, input: SkillInput): ResultKind {
-  const power = input.power ?? 0.5;
-  if (power > 0.96) return "OVER";
+  const aimY = input.aimY ?? 0.5;
+  if (aimY > 1.06) return "OVER";
   const bent = clamp(input.value + (input.curl ?? 0) * 0.25, -0.3, 1.3);
   if (bent < -0.06 || bent > 1.06) return "WIDE"; // outside the posts — a miss (matches engine)
   const acc = scoreSkillInput(challenge, input);
@@ -78,12 +83,12 @@ function resolveKind(challenge: SkillChallenge, input: SkillInput): ResultKind {
   const r = rng(
     "shot3d",
     Math.round(input.value * 100),
-    Math.round(power * 100),
+    Math.round(aimY * 100),
     Math.round(((input.curl ?? 0) + 1) * 100),
     Math.round((input.timing ?? 1) * 100),
   );
-  if (dist > 0.45 && r.chance(0.5)) return "POST"; // aimed tight to the post → woodwork
-  if (acc >= 0.36 && r.chance(0.6)) return "PARRY"; // nearly beat him → tipped away
+  if (dist > 0.45 && r.chance(0.5)) return "POST"; // tight to the post → woodwork
+  if (acc >= 0.34 && r.chance(0.6)) return "PARRY"; // nearly beat him → tipped away
   return "CATCH"; // comfortable stop
 }
 
@@ -144,7 +149,7 @@ function Net({ shot }: { shot: Shot | null }) {
     const p = clamp(e / FLIGHT_MS, 0, 1);
     const bp = clamp((p - 0.82) / 0.18, 0, 1); // grows as the ball enters
     const s = Math.sin(bp * Math.PI * 0.5);
-    m.position.set(shot.goalX, 0.5 + ARC * Math.sin(Math.PI * 0.85) * 0.5, -0.5 - s * 0.5);
+    m.position.set(shot.goalX, clamp(shot.goalY, 0.3, GOAL_H - 0.2), -0.5 - s * 0.5);
     m.scale.set(0.0001 + s * 0.7, 0.0001 + s * 0.7, 0.0001 + s * 0.9);
   });
   const net = <meshBasicMaterial color="#e6eef5" wireframe transparent opacity={0.22} side={THREE.DoubleSide} />;
@@ -250,8 +255,9 @@ function Keeper({ shot }: { shot: Shot | null }) {
     const launch = easeOutCubic(clamp((dp - 0.14) / 0.86, 0, 1)); // push off, then extend
     // reach the ball on a save; fall just short on a goal; token dive on miss/over
     const reachF =
-      shot.kind === "CATCH" || shot.kind === "PARRY" ? 1.0 : shot.kind === "POST" ? 0.86 : shot.kind === "GOAL" ? 0.48 : 0.35;
-    const leapH = shot.kind === "OVER" ? 0.85 : 0.55;
+      shot.kind === "CATCH" || shot.kind === "PARRY" ? 1.0 : shot.kind === "POST" ? 0.86 : shot.kind === "GOAL" ? 0.5 : 0.35;
+    // leap up for high shots, stay low for low ones (toward the ball's height)
+    const leapH = shot.kind === "OVER" ? 1.0 : clamp(shot.goalY * 0.55, 0.12, 1.25);
     g.position.x = -dir * 0.14 * ant * (1 - launch) + shot.goalX * reachF * launch;
     g.position.y = -0.16 * ant * (1 - launch) + leapH * Math.sin(Math.PI * launch);
     g.position.z = 0.3;
@@ -418,21 +424,23 @@ function Ball({ shot }: { shot: Shot | null }) {
     }
     const p = clamp(e / FLIGHT_MS, 0, 1);
     const gx = shot.goalX;
+    const gy = shot.goalY;
     const bow = (q: number) => -shot.curl * BOW3D * Math.sin(Math.PI * q);
+    const arcTo = (q: number, targetY: number) => BALL_R + (targetY - BALL_R) * q + 0.45 * Math.sin(Math.PI * q);
     const sgn = Math.sign(gx || 1);
     let x: number, y: number, z: number;
 
     if (shot.kind === "GOAL") {
       x = gx * p + bow(p);
-      y = BALL_R + ARC * Math.sin(Math.PI * p * 0.85); // still rising as it enters
+      y = arcTo(p, gy); // ends at the aimed height
       z = START_Z + (-START_Z - 0.85) * p; // ends inside the net
     } else if (shot.kind === "OVER") {
       x = gx * p + bow(p);
-      y = BALL_R + (GOAL_H + 1.6) * Math.sin(Math.PI * 0.5 * p); // sails up and over
+      y = BALL_R + (GOAL_H + 1.8) * Math.sin(Math.PI * 0.5 * p); // sails up and over
       z = START_Z + (-START_Z - 2.5) * p;
     } else if (shot.kind === "WIDE") {
       x = gx * p + bow(p); // gx is beyond the post → flies wide of the goal
-      y = BALL_R + ARC * Math.sin(Math.PI * p * 0.85);
+      y = arcTo(p, gy);
       z = START_Z + (-START_Z - 1.6) * p; // past the line, outside the posts
     } else {
       const pc = 0.82;
@@ -442,11 +450,11 @@ function Ball({ shot }: { shot: Shot | null }) {
       if (p <= pc) {
         const pp = p / pc;
         x = tx * pp + bow(pp);
-        y = BALL_R + ARC * Math.sin(Math.PI * pp * 0.8);
+        y = arcTo(pp, gy);
         z = START_Z + (contactZ - START_Z) * pp; // reach the keeper, not the net
       } else {
         const pa = (p - pc) / (1 - pc);
-        const cy = BALL_R + ARC * Math.sin(Math.PI * 0.8);
+        const cy = gy; // contact at the aimed height
         if (shot.kind === "CATCH") {
           x = tx;
           y = cy * (1 - pa) + (BALL_R + 0.5) * pa; // gathered into the keeper
@@ -457,7 +465,7 @@ function Ball({ shot }: { shot: Shot | null }) {
           z = contactZ + 3.5 * pa;
         } else {
           x = tx - sgn * 1.7 * pa; // off the post, back out into play
-          y = cy * (1 - 0.25 * pa);
+          y = Math.max(BALL_R, cy * (1 - 0.25 * pa));
           z = contactZ + 4 * pa;
         }
       }
@@ -474,25 +482,26 @@ function Ball({ shot }: { shot: Shot | null }) {
   );
 }
 
-function AimMarker({ x }: { x: number }) {
+function AimMarker({ x, y }: { x: number; y: number }) {
   return (
-    <mesh position={[x, GOAL_H * 0.5, 0]} rotation-x={Math.PI / 2}>
-      <torusGeometry args={[0.3, 0.06, 8, 20]} />
-      <meshStandardMaterial color="#34d399" emissive="#34d399" emissiveIntensity={0.6} />
+    <mesh position={[x, y, 0.02]}>
+      <torusGeometry args={[0.32, 0.07, 8, 20]} />
+      <meshStandardMaterial color="#34d399" emissive="#34d399" emissiveIntensity={0.7} />
     </mesh>
   );
 }
 
-/** Dotted preview of the (curving) shot path while you're aiming. */
-function Trajectory({ aim, curl }: { aim: number; curl: number }) {
-  const end = landingX(aim, curl);
+/** Dotted preview of the (curving) shot path to the aimed spot. */
+function Trajectory({ aimX, aimY, curl }: { aimX: number; aimY: number; curl: number }) {
+  const ex = landingX(aimX, curl);
+  const ey = clamp(aimY, 0, 1.2) * GOAL_H;
   const dots = [];
   for (let i = 1; i <= 9; i++) {
     const p = i / 10;
     dots.push([
-      end * p - curl * BOW3D * Math.sin(Math.PI * p),
-      BALL_R + ARC * Math.sin(Math.PI * p),
-      START_Z + (-START_Z - 0.4) * p,
+      ex * p - curl * BOW3D * Math.sin(Math.PI * p),
+      BALL_R + (ey - BALL_R) * p + 0.45 * Math.sin(Math.PI * p), // arc up to the target height
+      START_Z + -START_Z * p,
     ] as const);
   }
   return (
@@ -526,13 +535,19 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
     return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 80 };
   }
 
-  function doFire(aim: number, power: number, c: number) {
+  function doFire(aimX: number, aimY: number, c: number) {
     if (firedRef.current) return;
     firedRef.current = true;
     const timing = clamp(t, 0, 1);
-    const input = { value: aim, power, timing, curl: c };
+    const input = { value: aimX, aimY, power: 0.74, timing, curl: c };
     const kind = resolveKind(challenge, input);
-    setShot({ aim, power, curl: c, fireAt: performance.now(), kind, goalX: landingX(aim, c) });
+    setShot({
+      curl: c,
+      fireAt: performance.now(),
+      kind,
+      goalX: landingX(aimX, c),
+      goalY: clamp(aimY, 0, 1.2) * GOAL_H,
+    });
     // the thwack lands when the foot connects, after the run-up
     window.setTimeout(() => {
       sfx.kick();
@@ -542,8 +557,8 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
   }
   useEffect(() => {
     fireRef.current = () => {
-      const ap = drag ? aimPower(drag) : { aim: 0.5, power: 0.4 };
-      doFire(ap.aim, ap.power, computeCurl(pathRef.current));
+      const sp = drag ? aimSpot(drag) : { aimX: 0.5, aimY: 0.4 };
+      doFire(sp.aimX, sp.aimY, computeCurl(pathRef.current));
     };
   });
   useEffect(() => {
@@ -559,8 +574,9 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
     return () => cancelAnimationFrame(raf);
   }, [windowMs]);
 
-  const live = drag && !shot ? aimPower(drag) : null;
-  const liveEnd = live ? landingX(live.aim, curl) : 0;
+  const live = drag && !shot ? aimSpot(drag) : null;
+  const liveX = live ? landingX(live.aimX, curl) : 0;
+  const liveY = live ? clamp(live.aimY, 0, 1.2) * GOAL_H : 0;
 
   function onDown(e: React.PointerEvent) {
     if (shot) return;
@@ -579,11 +595,10 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
   }
   function onUp() {
     if (shot || !drag) return;
-    const ap = aimPower(drag);
-    doFire(ap.aim, ap.power, computeCurl(pathRef.current));
+    const sp = aimSpot(drag);
+    doFire(sp.aimX, sp.aimY, computeCurl(pathRef.current));
   }
 
-  const powerPct = Math.round((live?.power ?? 0) * 100);
   const clockPct = Math.max(0, (1 - t) * 100);
 
   return (
@@ -607,8 +622,8 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
           <Ball shot={shot} />
           {live && (
             <>
-              <Trajectory aim={live.aim} curl={curl} />
-              <AimMarker x={liveEnd} />
+              <Trajectory aimX={live.aimX} aimY={live.aimY} curl={curl} />
+              <AimMarker x={liveX} y={liveY} />
             </>
           )}
         </Canvas>
@@ -622,23 +637,14 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
         />
       </div>
 
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[var(--surface)]">
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--surface)]">
         <div
           className="h-full rounded-full"
           style={{ width: `${clockPct}%`, backgroundColor: clockPct < 30 ? "var(--danger)" : "var(--warn)" }}
         />
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <span className="w-12 text-[10px] uppercase tracking-wider text-[var(--muted)]">Power</span>
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--surface)]">
-          <div
-            className="h-full rounded-full transition-[width] duration-75"
-            style={{ width: `${powerPct}%`, backgroundColor: powerPct > 92 ? "var(--danger)" : "var(--accent)" }}
-          />
-        </div>
-      </div>
       <p className="mt-1 text-center text-[10px] text-[var(--muted)]">
-        {shot ? "Struck!" : "Pull back for power, steer to aim — hook the pull to curl it round the keeper"}
+        {shot ? "Struck!" : "Drag to a spot in the goal — up for height, aim the corners; hook to curl. Be quick!"}
       </p>
     </div>
   );

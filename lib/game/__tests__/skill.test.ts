@@ -127,6 +127,18 @@ describe("skill scoring", () => {
     expect(scoreSkillInput(challenge, { value: 0.5 })).toBeCloseTo(1, 5);
     expect(scoreSkillInput(challenge, { value: 0.95 })).toBe(0);
   });
+
+  it("aiming a top corner beats the keeper; a low central shot is saved", () => {
+    const topCorner = scoreSkillInput(shotChallenge, { value: 0.05, aimY: 0.95, power: 0.72, timing: 0.2 });
+    const lowCentre = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 0.2, power: 0.72, timing: 0.2 });
+    expect(tierFromAccuracy(topCorner)).toBe("GREAT");
+    expect(lowCentre).toBeLessThan(0.35); // smothered
+  });
+
+  it("aiming over the bar misses", () => {
+    const over = scoreSkillInput(shotChallenge, { value: 0.5, aimY: 1.2, power: 0.72, timing: 0.2 });
+    expect(over).toBeLessThan(0.3);
+  });
 });
 
 describe("skill resolution", () => {
