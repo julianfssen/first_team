@@ -41,12 +41,10 @@ function aimPower(p: { x: number; y: number }): { aim: number; power: number } {
   const dx = p.x - ANCHOR.x;
   const pull = Math.max(0, p.y - ANCHOR.y);
   return {
-    aim: clamp(0.5 + dx / AIM_RANGE, 0, 1),
+    // allow aiming past the posts so over-doing it misses wide
+    aim: clamp(0.5 + dx / AIM_RANGE, -0.2, 1.2),
     power: clamp(pull / MAX_PULL_Y, 0, 1),
   };
-}
-function bentLanding(aim: number, curl: number): number {
-  return clamp(aim + curl * 0.25, 0, 1);
 }
 
 // --- 3D field constants (metres) ---
@@ -59,21 +57,24 @@ const FLIGHT_MS = 720; // ball travel after contact
 const BOW3D = 2.6; // lateral swerve from curl (visible from the elevated camera)
 const ARC = 1.15; // flight height
 
-type ResultKind = "GOAL" | "CATCH" | "PARRY" | "POST" | "OVER";
+type ResultKind = "GOAL" | "CATCH" | "PARRY" | "POST" | "OVER" | "WIDE";
 type Shot = { aim: number; power: number; curl: number; fireAt: number; kind: ResultKind; goalX: number };
 
+/** Where the ball ends up across the goal, in metres (can be beyond the posts). */
 function landingX(aim: number, curl: number): number {
-  return (bentLanding(aim, curl) - 0.5) * GOAL_W;
+  return (clamp(aim + curl * 0.25, -0.3, 1.3) - 0.5) * GOAL_W;
 }
 
 /** Decide the visual outcome so the animation MATCHES the engine's result. */
 function resolveKind(challenge: SkillChallenge, input: SkillInput): ResultKind {
   const power = input.power ?? 0.5;
   if (power > 0.96) return "OVER";
+  const bent = clamp(input.value + (input.curl ?? 0) * 0.25, -0.3, 1.3);
+  if (bent < -0.06 || bent > 1.06) return "WIDE"; // outside the posts — a miss (matches engine)
   const acc = scoreSkillInput(challenge, input);
   const tier = tierFromAccuracy(acc);
   if (tier === "GREAT" || tier === "GOOD") return "GOAL"; // matches engine (success → GOAL)
-  const dist = Math.abs(bentLanding(input.value, input.curl ?? 0) - 0.5);
+  const dist = Math.abs(bent - 0.5);
   const r = rng(
     "shot3d",
     Math.round(input.value * 100),
@@ -81,7 +82,7 @@ function resolveKind(challenge: SkillChallenge, input: SkillInput): ResultKind {
     Math.round(((input.curl ?? 0) + 1) * 100),
     Math.round((input.timing ?? 1) * 100),
   );
-  if (dist > 0.46) return "POST"; // aimed tight to the post → woodwork
+  if (dist > 0.45 && r.chance(0.5)) return "POST"; // aimed tight to the post → woodwork
   if (acc >= 0.36 && r.chance(0.6)) return "PARRY"; // nearly beat him → tipped away
   return "CATCH"; // comfortable stop
 }
@@ -247,8 +248,9 @@ function Keeper({ shot }: { shot: Shot | null }) {
     const dir = Math.sign(shot.goalX || 1);
     const ant = Math.min(dp / 0.14, 1); // crouch + tiny counter-step
     const launch = easeOutCubic(clamp((dp - 0.14) / 0.86, 0, 1)); // push off, then extend
-    // reach the ball on a save; fall just short when it's a goal; small hop on a shot over
-    const reachF = shot.kind === "GOAL" ? 0.48 : shot.kind === "OVER" ? 0.25 : 0.94;
+    // reach the ball on a save; fall just short on a goal; token dive on miss/over
+    const reachF =
+      shot.kind === "CATCH" || shot.kind === "PARRY" ? 1.0 : shot.kind === "POST" ? 0.86 : shot.kind === "GOAL" ? 0.48 : 0.35;
     const leapH = shot.kind === "OVER" ? 0.85 : 0.55;
     g.position.x = -dir * 0.14 * ant * (1 - launch) + shot.goalX * reachF * launch;
     g.position.y = -0.16 * ant * (1 - launch) + leapH * Math.sin(Math.PI * launch);
@@ -428,29 +430,35 @@ function Ball({ shot }: { shot: Shot | null }) {
       x = gx * p + bow(p);
       y = BALL_R + (GOAL_H + 1.6) * Math.sin(Math.PI * 0.5 * p); // sails up and over
       z = START_Z + (-START_Z - 2.5) * p;
+    } else if (shot.kind === "WIDE") {
+      x = gx * p + bow(p); // gx is beyond the post → flies wide of the goal
+      y = BALL_R + ARC * Math.sin(Math.PI * p * 0.85);
+      z = START_Z + (-START_Z - 1.6) * p; // past the line, outside the posts
     } else {
-      const pc = 0.8; // contact at the goal line
+      const pc = 0.82;
       const tx = shot.kind === "POST" ? sgn * (GOAL_W / 2 - 0.08) : gx;
+      // saves are stopped IN FRONT of the line (at the keeper); the post is on the line
+      const contactZ = shot.kind === "POST" ? 0.05 : 0.5;
       if (p <= pc) {
         const pp = p / pc;
         x = tx * pp + bow(pp);
         y = BALL_R + ARC * Math.sin(Math.PI * pp * 0.8);
-        z = START_Z + -START_Z * pp;
+        z = START_Z + (contactZ - START_Z) * pp; // reach the keeper, not the net
       } else {
         const pa = (p - pc) / (1 - pc);
         const cy = BALL_R + ARC * Math.sin(Math.PI * 0.8);
         if (shot.kind === "CATCH") {
           x = tx;
-          y = cy * (1 - pa) + (BALL_R + 0.55) * pa; // gathered into the keeper
-          z = 0.25 * pa;
+          y = cy * (1 - pa) + (BALL_R + 0.5) * pa; // gathered into the keeper
+          z = contactZ + 0.2 * pa; // toward the camera, never into the net
         } else if (shot.kind === "PARRY") {
           x = tx + sgn * 2.4 * pa; // tipped away, wide and up
           y = cy + 1.6 * pa;
-          z = 3.5 * pa;
+          z = contactZ + 3.5 * pa;
         } else {
-          x = tx - sgn * 1.7 * pa; // off the post, bounces back out
+          x = tx - sgn * 1.7 * pa; // off the post, back out into play
           y = cy * (1 - 0.25 * pa);
-          z = 4 * pa;
+          z = contactZ + 4 * pa;
         }
       }
     }

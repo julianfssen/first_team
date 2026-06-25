@@ -140,10 +140,9 @@ export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): n
     if (power > 0.97) return 0.18; // ballooned over the bar
     if (power < floor) return 0.2; // too soft — the keeper gathers it
 
-    // The ball bends late: aim is where you struck it, curl carries it across.
-    // (aim 0..1 spans post-to-post; bending beyond the frame goes wide.)
-    const bent = clamp(input.value, 0, 1) + curl * 0.25;
-    if (bent < -0.03 || bent > 1.03) return 0.2; // curled wide of the post
+    // aim 0..1 spans post-to-post; aiming/curling beyond the frame misses wide.
+    const bent = clamp(input.value, -0.3, 1.3) + curl * 0.25;
+    if (bent < -0.06 || bent > 1.06) return 0.15; // wide of the post — a miss
     const finalAim = clamp(bent, 0, 1);
 
     // A curled shot beats the keeper a touch — they can't adjust to late swerve.

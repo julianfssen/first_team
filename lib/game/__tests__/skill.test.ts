@@ -114,9 +114,12 @@ describe("skill scoring", () => {
     expect(["GREAT", "GOOD"]).toContain(tierFromAccuracy(curled)); // curled into the corner → goal
   });
 
-  it("over-curling sends it wide", () => {
-    const wide = scoreSkillInput(shotChallenge, { value: 0.9, power: 0.7, timing: 0.2, curl: 0.6 });
-    expect(wide).toBeLessThan(0.3);
+  it("over-curling (or aiming past the post) sends it wide", () => {
+    const overCurled = scoreSkillInput(shotChallenge, { value: 0.95, power: 0.7, timing: 0.2, curl: 0.9 });
+    expect(overCurled).toBeLessThan(0.3);
+    // aiming well beyond the post also misses (no longer clamped to the goal)
+    const aimedWide = scoreSkillInput(shotChallenge, { value: 1.25, power: 0.7, timing: 0.2, curl: 0 });
+    expect(aimedWide).toBeLessThan(0.3);
   });
 
   it("scores a perfectly timed commit high and a mistimed one low", () => {
