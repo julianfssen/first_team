@@ -53,7 +53,8 @@ const GOAL_W = 7.32;
 const GOAL_H = 2.44;
 const BALL_R = 0.26;
 const START_Z = 9;
-const FLIGHT_MS = 780;
+const CONTACT_MS = 300; // run-up + backswing before the foot connects
+const FLIGHT_MS = 720; // ball travel after contact
 const BOW3D = 2.6; // lateral swerve from curl (visible from the elevated camera)
 const ARC = 1.15; // flight height
 
@@ -172,21 +173,25 @@ function Keeper({ shot }: { shot: Shot | null }) {
   useFrame((state) => {
     const g = ref.current;
     if (!g) return;
-    if (!shot) {
-      // alive on his toes
-      const tt = state.clock.elapsedTime;
-      g.position.x = Math.sin(tt * 1.7) * 0.08;
-      g.position.y = Math.abs(Math.sin(tt * 3.2)) * 0.04;
-      g.rotation.z = Math.sin(tt * 1.7) * 0.05;
+    const tt = state.clock.elapsedTime;
+    // react to the strike (after contact), not the release
+    const e = shot ? performance.now() - shot.fireAt - CONTACT_MS : -1;
+    if (!shot || e < 0) {
+      // set and alive on his toes
+      g.position.set(Math.sin(tt * 1.7) * 0.07, Math.abs(Math.sin(tt * 3.2)) * 0.04, 0.3);
+      g.rotation.set(0, 0, Math.sin(tt * 1.7) * 0.05);
       return;
     }
-    const p = clamp((performance.now() - shot.fireAt) / FLIGHT_MS, 0, 1);
+    const dp = clamp(e / 540, 0, 1);
     const end = landingX(shot.aim, shot.curl);
-    // react, then commit a smooth dive across most of the flight (no robotic snap)
-    const dp = easeOutCubic(clamp((p - 0.12) / 0.65, 0, 1));
-    g.position.x = end * 0.6 * dp;
-    g.position.y = -0.28 * Math.sin(Math.PI * clamp((p - 0.12) / 0.8, 0, 1));
-    g.rotation.z = -Math.sign(end || 1) * 1.05 * dp;
+    const dir = Math.sign(end || 1);
+    const ant = Math.min(dp / 0.14, 1); // crouch + tiny counter-step
+    const launch = easeOutCubic(clamp((dp - 0.14) / 0.86, 0, 1)); // push off, then extend
+    g.position.x = -dir * 0.14 * ant * (1 - launch) + end * 0.62 * launch;
+    g.position.y = -0.16 * ant * (1 - launch) + 0.55 * Math.sin(Math.PI * launch); // crouch then leap arc
+    g.position.z = 0.3;
+    g.rotation.z = -dir * 1.4 * launch; // full horizontal extension
+    g.rotation.x = -0.18 * launch; // reach toward the ball
   });
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
@@ -238,42 +243,68 @@ function Keeper({ shot }: { shot: Shot | null }) {
   );
 }
 
-/** The shooter, foreground, seen from behind — swings a leg through on the strike. */
+/** The shooter, foreground, seen from behind — runs up, plants, and strikes through. */
+const STRIKER_START: [number, number, number] = [-1.3, 0, 10.6];
+const STRIKER_PLANT: [number, number, number] = [-0.95, 0, 9.95];
+
 function Striker({ shot }: { shot: Shot | null }) {
   const bodyRef = useRef<THREE.Group>(null);
-  const legRef = useRef<THREE.Group>(null);
+  const kickRef = useRef<THREE.Group>(null);
+  const standRef = useRef<THREE.Group>(null);
   useFrame((state) => {
     const b = bodyRef.current;
-    const l = legRef.current;
-    if (!b || !l) return;
+    const k = kickRef.current;
+    const s = standRef.current;
+    if (!b || !k || !s) return;
     if (!shot) {
-      const tt = state.clock.elapsedTime; // gentle idle
+      const tt = state.clock.elapsedTime; // gentle idle, waiting to run up
+      b.position.set(...STRIKER_START);
       b.rotation.x = Math.sin(tt * 2) * 0.03;
-      l.rotation.x = -0.15 + Math.sin(tt * 2) * 0.06;
+      k.rotation.x = Math.sin(tt * 2) * 0.05;
+      s.rotation.x = -Math.sin(tt * 2) * 0.05;
       return;
     }
-    const k = clamp((performance.now() - shot.fireAt) / 360, 0, 1);
-    if (k < 0.32) {
-      const w = easeOutCubic(k / 0.32); // plant + wind the leg back, lean back
-      l.rotation.x = -0.15 + w * 0.95;
-      b.rotation.x = -w * 0.14;
+    const e = performance.now() - shot.fireAt;
+    const RUN = CONTACT_MS - 90; // approach, then a short plant+backswing into contact
+    if (e < RUN) {
+      const t = e / RUN;
+      const et = easeOutCubic(t);
+      b.position.set(
+        STRIKER_START[0] + (STRIKER_PLANT[0] - STRIKER_START[0]) * et,
+        0,
+        STRIKER_START[2] + (STRIKER_PLANT[2] - STRIKER_START[2]) * et,
+      );
+      b.rotation.x = 0.06;
+      const stride = Math.sin(t * 3 * Math.PI); // ~1.5 running strides
+      k.rotation.x = stride * 0.7;
+      s.rotation.x = -stride * 0.7;
+    } else if (e < CONTACT_MS) {
+      const t = (e - RUN) / 90; // plant the standing foot, wind the kicking leg back
+      b.position.set(...STRIKER_PLANT);
+      b.rotation.x = 0.06 - t * 0.18;
+      k.rotation.x = 0.2 + t * 0.85;
+      s.rotation.x = 0;
     } else {
-      const s = easeInOutCubic((k - 0.32) / 0.68); // snap through + follow-through lean
-      l.rotation.x = 0.8 - s * 2.5;
-      b.rotation.x = -0.14 + s * 0.32;
+      const t = easeInOutCubic(clamp((e - CONTACT_MS) / 300, 0, 1)); // snap through + follow lean
+      b.position.set(...STRIKER_PLANT);
+      b.rotation.x = -0.12 + t * 0.34;
+      k.rotation.x = 1.05 - t * 2.7;
+      s.rotation.x = 0;
     }
   });
   return (
-    <group ref={bodyRef} position={[-0.95, 0, 9.9]}>
-      {/* standing leg */}
-      <mesh position={[0.16, 0.3, 0]}>
-        <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
-        <meshToonMaterial color="#1f2937" />
-        <Ink />
-      </mesh>
-      {/* kicking leg (pivots at the hip) */}
-      <group ref={legRef} position={[-0.12, 0.74, 0]}>
-        <mesh position={[0, -0.3, 0.02]}>
+    <group ref={bodyRef} position={STRIKER_START}>
+      {/* standing leg (pivots at the hip too, for the run-up strides) */}
+      <group ref={standRef} position={[0.16, 0.7, 0]}>
+        <mesh position={[0, -0.34, 0]}>
+          <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
+          <meshToonMaterial color="#1f2937" />
+          <Ink />
+        </mesh>
+      </group>
+      {/* kicking leg */}
+      <group ref={kickRef} position={[-0.12, 0.72, 0]}>
+        <mesh position={[0, -0.32, 0.02]}>
           <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
           <meshToonMaterial color="#1f2937" />
           <Ink />
@@ -315,7 +346,8 @@ function Ball({ shot }: { shot: Shot | null }) {
       m.position.set(0, BALL_R, START_Z);
       return;
     }
-    const p = clamp((performance.now() - shot.fireAt) / FLIGHT_MS, 0, 1);
+    // the ball waits at the spot through the run-up, then flies on contact
+    const p = clamp((performance.now() - shot.fireAt - CONTACT_MS) / FLIGHT_MS, 0, 1);
     const end = landingX(shot.aim, shot.curl);
     m.position.set(
       end * p - shot.curl * BOW3D * Math.sin(Math.PI * p),
@@ -388,11 +420,14 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
   function doFire(aim: number, power: number, c: number) {
     if (firedRef.current) return;
     firedRef.current = true;
-    sfx.kick();
-    haptics.light();
     setShot({ aim, power, curl: c, fireAt: performance.now() });
     const timing = clamp(t, 0, 1);
-    window.setTimeout(() => onComplete({ value: aim, power, timing, curl: c }), 700);
+    // the thwack lands when the foot connects, after the run-up
+    window.setTimeout(() => {
+      sfx.kick();
+      haptics.light();
+    }, CONTACT_MS);
+    window.setTimeout(() => onComplete({ value: aim, power, timing, curl: c }), CONTACT_MS + FLIGHT_MS - 40);
   }
   useEffect(() => {
     fireRef.current = () => {
