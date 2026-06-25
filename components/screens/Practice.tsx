@@ -6,6 +6,7 @@ import type { Career, MatchContext, MatchState, SkillInput } from "@/lib/game/ty
 import { getPassage } from "@/lib/game/passages";
 import { buildSkillChallenge, scoreSkillInput, tierFromAccuracy } from "@/lib/game/skillEngine";
 import { SkillChallengeView } from "@/components/game/Skill";
+import { sfx, haptics } from "@/lib/ui/fx";
 import { Button, Card, ScreenHeader, cx } from "@/components/ui";
 import { ratingColor } from "@/lib/ui/format";
 
@@ -96,6 +97,13 @@ export function Practice() {
     const accuracy = scoreSkillInput(challenge, input);
     const tier = tierFromAccuracy(accuracy);
     const goal = tier === "GREAT" || tier === "GOOD";
+    if (goal) {
+      sfx.goal();
+      haptics.goal();
+    } else {
+      sfx.save();
+      haptics.save();
+    }
     setResult({ goal, tier, accuracy, shotType: challenge.shotType ?? "NORMAL", input });
     setTally((t) => ({ goals: t.goals + (goal ? 1 : 0), shots: t.shots + 1 }));
   }

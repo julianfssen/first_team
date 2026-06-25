@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
 import { keeperReach } from "@/lib/game/skillEngine";
+import { sfx, haptics } from "@/lib/ui/fx";
 import { cx } from "@/components/ui";
 import { clamp } from "@/lib/game/util";
 
@@ -40,15 +41,17 @@ export function SkillChallengeView({
 // Shot — drag back & flick
 // ---------------------------------------------------------------------------
 
-const ANCHOR = { x: 50, y: 58 };
-const GOAL_Y = 20;
-const MOUTH_L = 12;
-const MOUTH_R = 88;
+const ANCHOR = { x: 50, y: 64 };
+const GOAL_Y = 19; // where the ball finishes, in the net (perspective: far away)
+const GOAL_TOP = 12; // crossbar
+const GOAL_LINE = 30; // front of the goal / goal line
+const MOUTH_L = 28; // perspective-narrowed goal mouth (it's "far")
+const MOUTH_R = 72;
 const SPAN = MOUTH_R - MOUTH_L;
-const AIM_RANGE = 64; // horizontal drag (svg units) to swing post-to-post
+const AIM_RANGE = 56; // horizontal drag (svg units) to swing post-to-post
 const MAX_PULL_Y = 26; // downward pull for full power
 const CURL_SCALE = 12; // pull-back bow (svg units) for full curl
-const BOW = 16; // visual flight bend per unit curl
+const BOW = 14; // visual flight bend per unit curl
 
 /** Signed curl (-1 left .. +1 right) from how much the pull-back path bowed. */
 function computeCurl(path: { x: number; y: number }[]): number {
@@ -101,7 +104,7 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
   function toSvg(e: React.PointerEvent): { x: number; y: number } {
     const r = svgRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) return ANCHOR;
-    return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 72 };
+    return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 80 };
   }
 
   function compute(p: { x: number; y: number }): { aim: number; power: number; crossX: number } {
@@ -121,6 +124,8 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
   function doFire(aim: number, power: number, curl: number) {
     if (firedRef.current) return;
     firedRef.current = true;
+    sfx.kick();
+    haptics.light();
     const landing = MOUTH_L + bentLanding(aim, curl) * span; // where the bend takes it
     setShot({ crossX: landing, curl });
     const timing = clamp(t, 0, 1);
@@ -187,33 +192,47 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
     <div className="select-none">
       <svg
         ref={svgRef}
-        viewBox="0 0 100 72"
-        className="w-full touch-none rounded-xl bg-gradient-to-b from-[#0f2a1a] to-[#0c1f14]"
+        viewBox="0 0 100 80"
+        className="w-full touch-none rounded-xl bg-gradient-to-b from-[#08160e] to-[#0c2a18]"
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerLeave={onUp}
       >
-        {/* goal frame (crossbar emphasised — too much power sails over) */}
-        <line x1={MOUTH_L} y1="6" x2={MOUTH_R} y2="6" stroke="#e8edf4" strokeWidth="2" />
-        <line x1={MOUTH_L} y1="6" x2={MOUTH_L} y2={GOAL_Y + 6} stroke="#e8edf4" strokeWidth="1.4" />
-        <line x1={MOUTH_R} y1="6" x2={MOUTH_R} y2={GOAL_Y + 6} stroke="#e8edf4" strokeWidth="1.4" />
-        {[26, 40, 54, 68].map((x) => (
-          <line key={x} x1={x} y1="6" x2={x} y2={GOAL_Y + 6} stroke="#ffffff" strokeWidth="0.3" opacity="0.15" />
+        {/* pitch receding to the goal (perspective) */}
+        <polygon points="20,30 80,30 112,80 -12,80" fill="#0f3a22" />
+        {[-12, 14, 50, 86, 112].map((xb, i) => (
+          <line key={`s${i}`} x1={xb} y1="80" x2={50 + (xb - 50) * 0.2} y2="30" stroke="#ffffff" strokeWidth="0.3" opacity="0.06" />
+        ))}
+        {[42, 56, 70].map((y) => (
+          <line key={`b${y}`} x1={50 - (y - 30) * 1.7} y1={y} x2={50 + (y - 30) * 1.7} y2={y} stroke="#ffffff" strokeWidth="0.3" opacity="0.05" />
+        ))}
+
+        {/* goal: net backing + grid */}
+        <rect x={MOUTH_L} y={GOAL_TOP} width={SPAN} height={GOAL_LINE - GOAL_TOP} fill="#0a1a12" opacity="0.55" />
+        {[36, 44, 52, 60].map((x) => (
+          <line key={`nv${x}`} x1={x} y1={GOAL_TOP} x2={x} y2={GOAL_LINE} stroke="#ffffff" strokeWidth="0.25" opacity="0.12" />
+        ))}
+        {[16, 20, 24, 28].map((y) => (
+          <line key={`nh${y}`} x1={MOUTH_L} y1={y} x2={MOUTH_R} y2={y} stroke="#ffffff" strokeWidth="0.25" opacity="0.12" />
         ))}
 
         {/* keeper's reach — the danger zone grows as the window closes */}
-        <rect x={50 - bandHalf} y="7" width={bandHalf * 2} height={GOAL_Y + 4} fill="var(--danger)" opacity="0.2" />
+        <rect x={50 - bandHalf} y={GOAL_TOP + 1} width={bandHalf * 2} height={GOAL_LINE - GOAL_TOP - 1} fill="var(--danger)" opacity="0.2" />
+
+        {/* goal frame (crossbar emphasised — too much power sails over) */}
+        <line x1={MOUTH_L} y1={GOAL_TOP} x2={MOUTH_R} y2={GOAL_TOP} stroke="#e8edf4" strokeWidth="1.6" />
+        <line x1={MOUTH_L} y1={GOAL_TOP} x2={MOUTH_L} y2={GOAL_LINE} stroke="#e8edf4" strokeWidth="1.4" />
+        <line x1={MOUTH_R} y1={GOAL_TOP} x2={MOUTH_R} y2={GOAL_LINE} stroke="#e8edf4" strokeWidth="1.4" />
 
         {/* keeper */}
         <motion.g
-          animate={shot ? { x: (shot.crossX - 50) * 0.5, rotate: shot.crossX < 50 ? -18 : 18 } : { x: 0, rotate: 0 }}
+          animate={shot ? { x: (shot.crossX - 50) * 0.6, rotate: shot.crossX < 50 ? -20 : 20 } : { x: 0, rotate: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          style={{ originX: "50px", originY: `${GOAL_Y}px` }}
+          style={{ originX: "50px", originY: `${GOAL_LINE}px` }}
         >
-          <circle cx="50" cy="13" r="3" fill="#fbbf24" />
-          <rect x="47" y="15" width="6" height="9" rx="2" fill="#fbbf24" />
-          <text x="50" y="22" fontSize="6" textAnchor="middle">🧤</text>
+          <circle cx="50" cy="20" r="2.4" fill="#fbbf24" />
+          <rect x="47.6" y="22" width="4.8" height="7" rx="1.6" fill="#fbbf24" />
         </motion.g>
 
         {/* aim guide — bends with your hooked pull-back */}
@@ -227,24 +246,38 @@ function ShotScene({ challenge, onComplete }: SceneProps) {
               strokeDasharray="2 2"
               opacity="0.85"
             />
-            <circle cx={liveLandingX} cy={GOAL_Y} r="1.8" fill="var(--accent)" />
+            <circle cx={liveLandingX} cy={GOAL_Y} r="1.6" fill="var(--accent)" />
           </>
         )}
 
-        {/* ball — curls along the bent path on the strike */}
-        <motion.circle
-          r="3"
-          fill="#ffffff"
-          stroke="#0c1f14"
-          strokeWidth="0.6"
+        {/* ground shadow — stays on the pitch as the ball rises and flies away */}
+        <motion.ellipse
+          fill="#000000"
           animate={
             shot && flightCtrl
-              ? { cx: [ANCHOR.x, flightCtrl.x, shot.crossX], cy: [ANCHOR.y, flightCtrl.y, GOAL_Y] }
-              : { cx: ballPos.x, cy: ballPos.y }
+              ? {
+                  cx: [ANCHOR.x, flightCtrl.x, shot.crossX],
+                  cy: [ANCHOR.y, (ANCHOR.y + GOAL_LINE) / 2, GOAL_LINE],
+                  rx: [4.5, 3, 1.6],
+                  ry: [1.6, 1, 0.6],
+                  opacity: [0.32, 0.24, 0.16],
+                }
+              : { cx: ballPos.x, cy: ANCHOR.y, rx: 4.5, ry: 1.6, opacity: 0.3 }
           }
           transition={{ duration: shot ? 0.5 : 0, ease: "easeOut" }}
         />
-        <circle cx={ANCHOR.x} cy={ANCHOR.y} r="0.8" fill="#ffffff" opacity="0.4" />
+
+        {/* ball — scales down as it flies away, curling along the bent path */}
+        <motion.g
+          animate={
+            shot && flightCtrl
+              ? { x: [ANCHOR.x, flightCtrl.x, shot.crossX], y: [ANCHOR.y, flightCtrl.y, GOAL_Y], scale: [1, 0.72, 0.46] }
+              : { x: ballPos.x, y: ballPos.y, scale: 1 }
+          }
+          transition={{ duration: shot ? 0.5 : 0, ease: "easeOut" }}
+        >
+          <circle r="3.4" fill="#ffffff" stroke="#0c1f14" strokeWidth="0.5" />
+        </motion.g>
       </svg>
 
       {/* shot clock */}

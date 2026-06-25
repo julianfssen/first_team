@@ -9,6 +9,7 @@ import { Button, ActionBar, Pill, cx } from "@/components/ui";
 import { RiskBadge } from "@/components/game/Cards";
 import { SkillChallengeView } from "@/components/game/Skill";
 import { GoalBanner } from "@/components/game/GoalBanner";
+import { sfx, haptics } from "@/lib/ui/fx";
 import { outcomeIsPositive, pretty } from "@/lib/ui/format";
 
 /** A celebratory/grim flash for the most recent beat, if it warrants one. */
@@ -149,6 +150,33 @@ export function LiveMatch() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
   }, [feed.length, awaitingChoice]);
+
+  // Sound + haptics for the latest beat (side-effects only).
+  useEffect(() => {
+    const last = feed[feed.length - 1];
+    if (!last) return;
+    if (last.kind === "NARRATED" && last.scored === "TEAM") {
+      sfx.goal();
+      haptics.goal();
+    } else if (last.kind === "NARRATED" && last.scored === "OPP") {
+      sfx.concede();
+      haptics.save();
+    } else if (last.kind === "RESULT") {
+      const o = last.result?.outcome;
+      if (o === "GOAL" || o === "ASSIST") {
+        sfx.goal();
+        haptics.goal();
+      } else if (o === "SAVE" || o === "PENALTY_SAVE" || o === "TACKLE_WON" || o === "BLOCK") {
+        sfx.save();
+        haptics.save();
+      } else if (o === "GOAL_CONCEDED" || o === "GK_ERROR" || o === "DEFENSIVE_ERROR") {
+        sfx.concede();
+        haptics.save();
+      }
+    } else if (last.kind === "FULL_TIME") {
+      sfx.whistle();
+    }
+  }, [feed]);
 
   const ctx = matchState.context;
   const score = `${matchState.teamScore}–${matchState.oppScore}`;

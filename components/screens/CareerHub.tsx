@@ -7,6 +7,7 @@ import { PlayerCard } from "@/components/game/PlayerCard";
 import { AttributeGrid, StatusGrid } from "@/components/game/Bars";
 import { TraitBadge } from "@/components/game/Cards";
 import { Button, Card, SectionTitle, ActionBar } from "@/components/ui";
+import { isSoundOn, toggleSound } from "@/lib/ui/fx";
 import { ratingColor } from "@/lib/ui/format";
 
 type StatItem = { label: string; value: string };
@@ -37,6 +38,7 @@ export function CareerHub() {
 
   const [savedAt, setSavedAt] = useState(false);
   const [confirmRetire, setConfirmRetire] = useState(false);
+  const [soundOn, setSoundOn] = useState(() => isSoundOn());
 
   const unlocked = career.traits.filter((t) => t.unlocked).map((t) => t.traitId);
   const isKeeper = career.positionFamily === "GOALKEEPER";
@@ -47,6 +49,9 @@ export function CareerHub() {
       <div className="flex items-center justify-between px-4 pt-5 pb-2">
         <h1 className="text-lg font-bold">Career Hub</h1>
         <div className="flex gap-3 text-sm text-[var(--muted)]">
+          <button onClick={() => setSoundOn(toggleSound())} aria-label="Toggle sound">
+            {soundOn ? "🔊" : "🔇"}
+          </button>
           <button onClick={() => setScreen("PRACTICE")}>🎯 Practice</button>
           <button onClick={() => setScreen("TIMELINE")}>Timeline</button>
           <button
