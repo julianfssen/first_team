@@ -100,7 +100,8 @@ export function buildSkillChallenge(
       label = "Strike!";
       prompt = "Beat the keeper to a corner before the gap shuts.";
     }
-    return { kind, flavor, forgiveness, label, prompt, shotType, reachBase, reachGrow, powerFloor, windowMs };
+    const seed = `${moment.id}:${choiceId}`; // unique per shot → varying keeper guess
+    return { kind, flavor, forgiveness, label, prompt, shotType, seed, reachBase, reachGrow, powerFloor, windowMs };
   }
 
   // TIMING / RUN share a sweet-window model.
@@ -138,9 +139,8 @@ export function keeperReach(challenge: SkillChallenge, timing: number, power: nu
 export function keeperGuess(challenge: SkillChallenge): { dir: number; high: boolean } {
   const r = rng(
     "keepguess",
-    Math.round((challenge.reachBase ?? 0.15) * 1000),
-    challenge.windowMs ?? 1700,
-    Math.round((challenge.reachGrow ?? 0.15) * 1000),
+    challenge.seed ??
+      `${Math.round((challenge.reachBase ?? 0.15) * 1000)}:${challenge.windowMs ?? 1700}:${Math.round((challenge.reachGrow ?? 0.15) * 1000)}`,
   );
   return { dir: r.float() < 0.5 ? -1 : 1, high: r.chance(0.4) };
 }

@@ -450,6 +450,8 @@ export type SkillChallenge = {
   // reach (how much of the goal centre is covered) = reachBase + reachGrow*timing
   // + a softness penalty for low power; you must beat it out to a corner.
   shotType?: ShotType;
+  /** Per-shot seed (varies shot-to-shot) — drives the keeper's committed guess. */
+  seed?: string;
   reachBase?: number;
   reachGrow?: number;
   /** Minimum power for the shot to even reach / not be gathered. */
