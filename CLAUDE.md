@@ -96,6 +96,14 @@ is sometimes the wrong one). Built in stages:
   outcome pipeline. Falls back to the RNG roll if no input (back-compatible).
   Skill kind/flavor inferred from the choice's `check`.
 
+  **Game feel:** `lib/ui/fx.ts` synthesises SFX at runtime via Web Audio (no
+  asset files) — kick/goal/save/concede/whistle — plus `navigator.vibrate`
+  haptics, gated by one persisted mute toggle (on the hub), all safe no-ops on
+  SSR/iOS/muted. The shot scene is 2.5D: a perspective pitch + goal, a ball that
+  scales down + casts a tracking ground shadow as it flies, the curl arc in
+  depth, a diving keeper; `GoalBanner` adds a particle burst. (The tackle/save/
+  through-ball scenes are still flat — 2.5D for those is a follow-up.)
+
   **Curl:** hooking the pull-back path curls the shot (`SkillInput.curl`, signed
   from the drag's bow). The ball bends late around the keeper (curl slightly
   beats their reach) — aim near the keeper and curl it into the corner — but
