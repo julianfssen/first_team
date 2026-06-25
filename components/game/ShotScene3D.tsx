@@ -65,7 +65,6 @@ function landingX(aim: number, curl: number): number {
 
 // easing — the difference between robotic (linear) and lively motion
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
-const easeOutBack = (x: number) => 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 2);
 const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
 function Pitch() {
@@ -113,8 +112,8 @@ function Goal() {
 }
 
 /** A packed grandstand behind the goal — rows of little jerseys, not stars. */
-const CROWD_COLS = 66;
-const CROWD_ROWS = 12;
+const CROWD_COLS = 100;
+const CROWD_ROWS = 18;
 const CROWD_COUNT = CROWD_COLS * CROWD_ROWS;
 
 function Crowd() {
@@ -129,9 +128,9 @@ function Crowd() {
     for (let row = 0; row < CROWD_ROWS; row++) {
       for (let c = 0; c < CROWD_COLS; c++) {
         out.push({
-          x: (c - CROWD_COLS / 2 + 0.5) * 0.32 + r.range(-0.05, 0.05),
-          y: 1.7 + row * 0.42 + r.range(-0.04, 0.04),
-          z: -8.6 - row * 0.52,
+          x: (c - CROWD_COLS / 2 + 0.5) * 0.3 + r.range(-0.05, 0.05),
+          y: 1.1 + row * 0.36 + r.range(-0.04, 0.04),
+          z: -6 - row * 0.42,
           c: r.pick(palette),
         });
       }
@@ -155,13 +154,13 @@ function Crowd() {
 
   return (
     <group>
-      {/* stand structure */}
-      <mesh position={[0, 4, -13.6]} rotation-x={0.32}>
-        <planeGeometry args={[52, 15]} />
-        <meshBasicMaterial color="#11161f" />
+      {/* stand structure (concrete grey, fills behind the jerseys) */}
+      <mesh position={[0, 4.2, -14]} rotation-x={0.3}>
+        <planeGeometry args={[70, 22]} />
+        <meshBasicMaterial color="#2b3340" />
       </mesh>
       <instancedMesh ref={ref} args={[undefined, undefined, CROWD_COUNT]}>
-        <boxGeometry args={[0.24, 0.3, 0.08]} />
+        <boxGeometry args={[0.26, 0.32, 0.08]} />
         <meshBasicMaterial toneMapped={false} />
       </instancedMesh>
     </group>
@@ -183,10 +182,11 @@ function Keeper({ shot }: { shot: Shot | null }) {
     }
     const p = clamp((performance.now() - shot.fireAt) / FLIGHT_MS, 0, 1);
     const end = landingX(shot.aim, shot.curl);
-    const dp = easeOutBack(clamp((p - 0.1) / 0.4, 0, 1)); // react, then explode across (overshoot)
-    g.position.x = end * 0.62 * dp;
-    g.position.y = -0.3 * Math.sin(Math.PI * clamp((p - 0.1) / 0.5, 0, 1));
-    g.rotation.z = -Math.sign(end || 1) * 1.2 * dp;
+    // react, then commit a smooth dive across most of the flight (no robotic snap)
+    const dp = easeOutCubic(clamp((p - 0.12) / 0.65, 0, 1));
+    g.position.x = end * 0.6 * dp;
+    g.position.y = -0.28 * Math.sin(Math.PI * clamp((p - 0.12) / 0.8, 0, 1));
+    g.rotation.z = -Math.sign(end || 1) * 1.05 * dp;
   });
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
@@ -442,15 +442,16 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
 
   return (
     <div className="select-none">
-      <div className="relative h-64 w-full overflow-hidden rounded-xl bg-gradient-to-b from-[#0a1a2e] to-[#0c2a18]">
+      <div className="relative h-64 w-full overflow-hidden rounded-xl bg-gradient-to-b from-[#6fb0e0] via-[#bfe0ee] to-[#3f9b63]">
         <Canvas
           camera={{ position: [0, 5, 18], fov: 38 }}
           onCreated={({ camera }) => camera.lookAt(0, 0.6, 3)}
           dpr={[1, 2]}
         >
-          <fog attach="fog" args={["#0a1424", 20, 46]} />
-          <ambientLight intensity={0.85} />
-          <directionalLight position={[5, 12, 8]} intensity={1.0} />
+          <fog attach="fog" args={["#cfe6f2", 34, 66]} />
+          <hemisphereLight args={["#ffffff", "#3a7d44", 0.7]} />
+          <ambientLight intensity={0.75} />
+          <directionalLight position={[6, 14, 8]} intensity={1.05} />
           <Crowd />
           <Pitch />
           <Goal />
