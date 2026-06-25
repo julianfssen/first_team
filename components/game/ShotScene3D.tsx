@@ -63,6 +63,11 @@ function landingX(aim: number, curl: number): number {
   return (bentLanding(aim, curl) - 0.5) * GOAL_W;
 }
 
+// easing — the difference between robotic (linear) and lively motion
+const easeOutCubic = (x: number) => 1 - Math.pow(1 - x, 3);
+const easeOutBack = (x: number) => 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 2);
+const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
 function Pitch() {
   return (
     <group>
@@ -107,64 +112,81 @@ function Goal() {
   );
 }
 
-/** Speckled crowd on a dark stand behind the goal. */
+/** A packed grandstand behind the goal — rows of little jerseys, not stars. */
+const CROWD_COLS = 66;
+const CROWD_ROWS = 12;
+const CROWD_COUNT = CROWD_COLS * CROWD_ROWS;
+
 function Crowd() {
-  const { pos, col } = useMemo(() => {
-    const N = 800;
-    const pos = new Float32Array(N * 3);
-    const col = new Float32Array(N * 3);
+  const ref = useRef<THREE.InstancedMesh>(null);
+  const fans = useMemo(() => {
+    const r = rng("crowd-3d");
     const palette = [
-      [0.92, 0.25, 0.25], [0.22, 0.45, 0.92], [0.96, 0.85, 0.25],
-      [0.92, 0.92, 0.96], [0.25, 0.82, 0.45], [0.95, 0.55, 0.2],
+      [0.9, 0.2, 0.22], [0.15, 0.4, 0.92], [0.96, 0.86, 0.2], [0.93, 0.94, 0.98],
+      [0.2, 0.75, 0.45], [0.95, 0.5, 0.15], [0.62, 0.22, 0.72], [0.1, 0.6, 0.7],
     ];
-    const r = rng("crowd-3d"); // deterministic (pure) instead of Math.random
-    for (let i = 0; i < N; i++) {
-      const x = r.range(-15, 15);
-      const y = 2.2 + r.float() * 4.2;
-      const z = -8.5 - r.float() * 4 - Math.abs(x) * 0.12;
-      pos[i * 3] = x;
-      pos[i * 3 + 1] = y;
-      pos[i * 3 + 2] = z;
-      const c = r.pick(palette);
-      col[i * 3] = c[0];
-      col[i * 3 + 1] = c[1];
-      col[i * 3 + 2] = c[2];
+    const out: { x: number; y: number; z: number; c: number[] }[] = [];
+    for (let row = 0; row < CROWD_ROWS; row++) {
+      for (let c = 0; c < CROWD_COLS; c++) {
+        out.push({
+          x: (c - CROWD_COLS / 2 + 0.5) * 0.32 + r.range(-0.05, 0.05),
+          y: 1.7 + row * 0.42 + r.range(-0.04, 0.04),
+          z: -8.6 - row * 0.52,
+          c: r.pick(palette),
+        });
+      }
     }
-    return { pos, col };
+    return out;
   }, []);
+
+  useEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    const o = new THREE.Object3D();
+    fans.forEach((f, i) => {
+      o.position.set(f.x, f.y, f.z);
+      o.updateMatrix();
+      m.setMatrixAt(i, o.matrix);
+      m.setColorAt(i, new THREE.Color(f.c[0], f.c[1], f.c[2]));
+    });
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+  }, [fans]);
+
   return (
     <group>
-      <mesh position={[0, 5, -12.5]} rotation-x={0.35}>
-        <planeGeometry args={[48, 13]} />
-        <meshBasicMaterial color="#0b1220" />
+      {/* stand structure */}
+      <mesh position={[0, 4, -13.6]} rotation-x={0.32}>
+        <planeGeometry args={[52, 15]} />
+        <meshBasicMaterial color="#11161f" />
       </mesh>
-      <points>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[pos, 3]} />
-          <bufferAttribute attach="attributes-color" args={[col, 3]} />
-        </bufferGeometry>
-        <pointsMaterial size={0.24} vertexColors sizeAttenuation />
-      </points>
+      <instancedMesh ref={ref} args={[undefined, undefined, CROWD_COUNT]}>
+        <boxGeometry args={[0.24, 0.3, 0.08]} />
+        <meshBasicMaterial toneMapped={false} />
+      </instancedMesh>
     </group>
   );
 }
 
 function Keeper({ shot }: { shot: Shot | null }) {
   const ref = useRef<THREE.Group>(null);
-  useFrame(() => {
+  useFrame((state) => {
     const g = ref.current;
     if (!g) return;
     if (!shot) {
-      g.position.x = 0;
-      g.position.y = 0;
-      g.rotation.z = 0;
+      // alive on his toes
+      const tt = state.clock.elapsedTime;
+      g.position.x = Math.sin(tt * 1.7) * 0.08;
+      g.position.y = Math.abs(Math.sin(tt * 3.2)) * 0.04;
+      g.rotation.z = Math.sin(tt * 1.7) * 0.05;
       return;
     }
     const p = clamp((performance.now() - shot.fireAt) / FLIGHT_MS, 0, 1);
     const end = landingX(shot.aim, shot.curl);
-    g.position.x = end * 0.5 * p;
-    g.position.y = -0.2 * Math.sin(Math.PI * p);
-    g.rotation.z = -Math.sign(end || 1) * 0.8 * p;
+    const dp = easeOutBack(clamp((p - 0.1) / 0.4, 0, 1)); // react, then explode across (overshoot)
+    g.position.x = end * 0.62 * dp;
+    g.position.y = -0.3 * Math.sin(Math.PI * clamp((p - 0.1) / 0.5, 0, 1));
+    g.rotation.z = -Math.sign(end || 1) * 1.2 * dp;
   });
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
@@ -218,19 +240,31 @@ function Keeper({ shot }: { shot: Shot | null }) {
 
 /** The shooter, foreground, seen from behind — swings a leg through on the strike. */
 function Striker({ shot }: { shot: Shot | null }) {
+  const bodyRef = useRef<THREE.Group>(null);
   const legRef = useRef<THREE.Group>(null);
-  useFrame(() => {
-    const g = legRef.current;
-    if (!g) return;
+  useFrame((state) => {
+    const b = bodyRef.current;
+    const l = legRef.current;
+    if (!b || !l) return;
     if (!shot) {
-      g.rotation.x = -0.2;
+      const tt = state.clock.elapsedTime; // gentle idle
+      b.rotation.x = Math.sin(tt * 2) * 0.03;
+      l.rotation.x = -0.15 + Math.sin(tt * 2) * 0.06;
       return;
     }
-    const p = clamp((performance.now() - shot.fireAt) / 240, 0, 1);
-    g.rotation.x = -0.2 - Math.sin(Math.PI * p) * 1.6; // wind up + swing through
+    const k = clamp((performance.now() - shot.fireAt) / 360, 0, 1);
+    if (k < 0.32) {
+      const w = easeOutCubic(k / 0.32); // plant + wind the leg back, lean back
+      l.rotation.x = -0.15 + w * 0.95;
+      b.rotation.x = -w * 0.14;
+    } else {
+      const s = easeInOutCubic((k - 0.32) / 0.68); // snap through + follow-through lean
+      l.rotation.x = 0.8 - s * 2.5;
+      b.rotation.x = -0.14 + s * 0.32;
+    }
   });
   return (
-    <group position={[-0.95, 0, 9.9]}>
+    <group ref={bodyRef} position={[-0.95, 0, 9.9]}>
       {/* standing leg */}
       <mesh position={[0.16, 0.3, 0]}>
         <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
