@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
+import { Outlines } from "@react-three/drei";
 import * as THREE from "three";
+
+const OUTLINE = { thickness: 0.06, color: "#0a0f14" } as const;
+function Ink() {
+  return <Outlines thickness={OUTLINE.thickness} color={OUTLINE.color} />;
+}
 import type { SkillChallenge, SkillInput } from "@/lib/game/types";
 import { sfx, haptics } from "@/lib/ui/fx";
 import { rng } from "@/lib/game/rng";
@@ -75,20 +81,22 @@ function Pitch() {
 }
 
 function Goal() {
-  const post = <meshToonMaterial color="#f4f7fa" />;
   return (
     <group position={[0, 0, 0]}>
       <mesh position={[-GOAL_W / 2, GOAL_H / 2, 0]}>
-        <cylinderGeometry args={[0.08, 0.08, GOAL_H, 10]} />
-        {post}
+        <cylinderGeometry args={[0.09, 0.09, GOAL_H, 10]} />
+        <meshToonMaterial color="#f4f7fa" />
+        <Ink />
       </mesh>
       <mesh position={[GOAL_W / 2, GOAL_H / 2, 0]}>
-        <cylinderGeometry args={[0.08, 0.08, GOAL_H, 10]} />
-        {post}
+        <cylinderGeometry args={[0.09, 0.09, GOAL_H, 10]} />
+        <meshToonMaterial color="#f4f7fa" />
+        <Ink />
       </mesh>
       <mesh position={[0, GOAL_H, 0]} rotation-z={Math.PI / 2}>
-        <cylinderGeometry args={[0.08, 0.08, GOAL_W + 0.16, 10]} />
-        {post}
+        <cylinderGeometry args={[0.09, 0.09, GOAL_W + 0.18, 10]} />
+        <meshToonMaterial color="#f4f7fa" />
+        <Ink />
       </mesh>
       {/* net */}
       <mesh position={[0, GOAL_H / 2, -0.7]}>
@@ -111,9 +119,9 @@ function Crowd() {
     ];
     const r = rng("crowd-3d"); // deterministic (pure) instead of Math.random
     for (let i = 0; i < N; i++) {
-      const x = r.range(-19, 19);
-      const y = 1.8 + r.float() * 7.5;
-      const z = -8 - r.float() * 6 - Math.abs(x) * 0.12;
+      const x = r.range(-15, 15);
+      const y = 2.2 + r.float() * 4.2;
+      const z = -8.5 - r.float() * 4 - Math.abs(x) * 0.12;
       pos[i * 3] = x;
       pos[i * 3 + 1] = y;
       pos[i * 3 + 2] = z;
@@ -158,44 +166,51 @@ function Keeper({ shot }: { shot: Shot | null }) {
     g.position.y = -0.2 * Math.sin(Math.PI * p);
     g.rotation.z = -Math.sign(end || 1) * 0.8 * p;
   });
-  const kit = <meshToonMaterial color="#fbbf24" />;
-  const dark = <meshToonMaterial color="#1b3a8a" />;
-  const skin = <meshToonMaterial color="#e8b48a" />;
-  const glove = <meshToonMaterial color="#eef4f8" />;
   return (
     <group ref={ref} position={[0, 0, 0.3]}>
-      <mesh position={[-0.15, 0.32, 0]}>
-        <capsuleGeometry args={[0.11, 0.42, 4, 8]} />
-        {dark}
+      {/* legs */}
+      <mesh position={[-0.16, 0.3, 0]}>
+        <capsuleGeometry args={[0.13, 0.34, 4, 8]} />
+        <meshToonMaterial color="#1b3a8a" />
+        <Ink />
       </mesh>
-      <mesh position={[0.15, 0.32, 0]}>
-        <capsuleGeometry args={[0.11, 0.42, 4, 8]} />
-        {dark}
+      <mesh position={[0.16, 0.3, 0]}>
+        <capsuleGeometry args={[0.13, 0.34, 4, 8]} />
+        <meshToonMaterial color="#1b3a8a" />
+        <Ink />
       </mesh>
-      <mesh position={[0, 0.95, 0]}>
-        <capsuleGeometry args={[0.27, 0.6, 4, 10]} />
-        {kit}
+      {/* body */}
+      <mesh position={[0, 1.0, 0]}>
+        <capsuleGeometry args={[0.32, 0.55, 4, 12]} />
+        <meshToonMaterial color="#fbbf24" />
+        <Ink />
       </mesh>
-      {/* raised arms (making himself big) + gloves */}
-      <mesh position={[-0.42, 1.1, 0.05]} rotation-z={0.7}>
-        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
-        {kit}
+      {/* head (overlaps the body — no gap) */}
+      <mesh position={[0, 1.62, 0]}>
+        <sphereGeometry args={[0.3, 18, 18]} />
+        <meshToonMaterial color="#e8b48a" />
+        <Ink />
       </mesh>
-      <mesh position={[0.42, 1.1, 0.05]} rotation-z={-0.7}>
-        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
-        {kit}
+      {/* raised arms + gloves */}
+      <mesh position={[-0.36, 1.36, 0.04]} rotation-z={0.8}>
+        <capsuleGeometry args={[0.1, 0.46, 4, 8]} />
+        <meshToonMaterial color="#fbbf24" />
+        <Ink />
       </mesh>
-      <mesh position={[-0.66, 1.34, 0.08]}>
-        <sphereGeometry args={[0.14, 10, 10]} />
-        {glove}
+      <mesh position={[0.36, 1.36, 0.04]} rotation-z={-0.8}>
+        <capsuleGeometry args={[0.1, 0.46, 4, 8]} />
+        <meshToonMaterial color="#fbbf24" />
+        <Ink />
       </mesh>
-      <mesh position={[0.66, 1.34, 0.08]}>
-        <sphereGeometry args={[0.14, 10, 10]} />
-        {glove}
+      <mesh position={[-0.58, 1.64, 0.06]}>
+        <sphereGeometry args={[0.16, 12, 12]} />
+        <meshToonMaterial color="#eef4f8" />
+        <Ink />
       </mesh>
-      <mesh position={[0, 1.52, 0]}>
-        <sphereGeometry args={[0.22, 16, 16]} />
-        {skin}
+      <mesh position={[0.58, 1.64, 0.06]}>
+        <sphereGeometry args={[0.16, 12, 12]} />
+        <meshToonMaterial color="#eef4f8" />
+        <Ink />
       </mesh>
     </group>
   );
@@ -214,36 +229,44 @@ function Striker({ shot }: { shot: Shot | null }) {
     const p = clamp((performance.now() - shot.fireAt) / 240, 0, 1);
     g.rotation.x = -0.2 - Math.sin(Math.PI * p) * 1.6; // wind up + swing through
   });
-  const kit = <meshToonMaterial color="#2bd4a8" />;
-  const dark = <meshToonMaterial color="#1f2937" />;
-  const skin = <meshToonMaterial color="#e8b48a" />;
   return (
     <group position={[-0.95, 0, 9.9]}>
-      <mesh position={[0.16, 0.34, 0]}>
-        <capsuleGeometry args={[0.12, 0.5, 4, 8]} />
-        {dark}
+      {/* standing leg */}
+      <mesh position={[0.16, 0.3, 0]}>
+        <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
+        <meshToonMaterial color="#1f2937" />
+        <Ink />
       </mesh>
-      <group ref={legRef} position={[-0.1, 0.72, 0]}>
-        <mesh position={[0, -0.32, 0.02]}>
-          <capsuleGeometry args={[0.12, 0.5, 4, 8]} />
-          {dark}
+      {/* kicking leg (pivots at the hip) */}
+      <group ref={legRef} position={[-0.12, 0.74, 0]}>
+        <mesh position={[0, -0.3, 0.02]}>
+          <capsuleGeometry args={[0.13, 0.4, 4, 8]} />
+          <meshToonMaterial color="#1f2937" />
+          <Ink />
         </mesh>
       </group>
-      <mesh position={[0, 1.02, 0]}>
-        <capsuleGeometry args={[0.24, 0.6, 4, 10]} />
-        {kit}
+      {/* body */}
+      <mesh position={[0, 1.05, 0]}>
+        <capsuleGeometry args={[0.3, 0.55, 4, 12]} />
+        <meshToonMaterial color="#2bd4a8" />
+        <Ink />
       </mesh>
-      <mesh position={[-0.32, 1.06, 0]} rotation-z={0.3}>
-        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
-        {kit}
+      {/* head (overlaps the body) */}
+      <mesh position={[0, 1.66, 0]}>
+        <sphereGeometry args={[0.28, 18, 18]} />
+        <meshToonMaterial color="#e8b48a" />
+        <Ink />
       </mesh>
-      <mesh position={[0.32, 1.06, 0]} rotation-z={-0.3}>
-        <capsuleGeometry args={[0.08, 0.5, 4, 8]} />
-        {kit}
+      {/* arms hanging naturally */}
+      <mesh position={[-0.3, 1.08, 0]} rotation-z={0.13}>
+        <capsuleGeometry args={[0.1, 0.5, 4, 8]} />
+        <meshToonMaterial color="#2bd4a8" />
+        <Ink />
       </mesh>
-      <mesh position={[0, 1.62, 0]}>
-        <sphereGeometry args={[0.2, 16, 16]} />
-        {skin}
+      <mesh position={[0.3, 1.08, 0]} rotation-z={-0.13}>
+        <capsuleGeometry args={[0.1, 0.5, 4, 8]} />
+        <meshToonMaterial color="#2bd4a8" />
+        <Ink />
       </mesh>
     </group>
   );
@@ -271,6 +294,7 @@ function Ball({ shot }: { shot: Shot | null }) {
     <mesh ref={ref}>
       <sphereGeometry args={[BALL_R, 18, 18]} />
       <meshToonMaterial color="#ffffff" />
+      <Ink />
     </mesh>
   );
 }
