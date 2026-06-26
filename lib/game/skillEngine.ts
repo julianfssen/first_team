@@ -77,24 +77,24 @@ export function buildSkillChallenge(
     let label: string, prompt: string;
     if (roll > 0.82) {
       shotType = "ONE_ON_ONE";
-      reachBase = 0.1 + fInv * 0.12;
-      reachGrow = 0.2; // the keeper closes faster than normal
+      reachBase = 0.14 + fInv * 0.06;
+      reachGrow = 0.22; // the keeper closes faster than normal
       powerFloor = 0.15;
       windowMs = 1900;
       label = "One-on-one!";
       prompt = "Keeper's rushing out — shoot early and pick your side.";
     } else if (roll > 0.64) {
       shotType = "LONG_RANGE";
-      reachBase = 0.14 + fInv * 0.14;
-      reachGrow = 0.08;
+      reachBase = 0.18 + fInv * 0.07;
+      reachGrow = 0.09;
       powerFloor = 0.45; // you need real power from distance
       windowMs = 2800;
       label = "From distance";
       prompt = "Long shot — you'll need real power to beat the keeper.";
     } else {
       shotType = "NORMAL";
-      reachBase = 0.11 + fInv * 0.14;
-      reachGrow = 0.12;
+      reachBase = 0.17 + fInv * 0.07;
+      reachGrow = 0.13;
       powerFloor = 0.18;
       windowMs = 2400;
       label = "Strike!";
@@ -161,27 +161,29 @@ export function scoreSkillInput(challenge: SkillChallenge, input: SkillInput): n
     if (bx < -0.06 || bx > 1.06) return 0.15; // wide of the post
     const fx = clamp(bx, 0, 1);
     const fy = clamp(aimY, 0, 1);
+    const inKey = `${Math.round(input.value * 1000)}:${Math.round(aimY * 1000)}:${Math.round((curl + 1) * 1000)}:${Math.round(timing * 1000)}`;
 
-    // Per-shot execution variance (deterministic from the inputs, so the scene
-    // and the engine agree, but a marginal shot can go either way).
-    const noise = rng(
-      "aimvar",
-      Math.round(input.value * 1000),
-      Math.round(aimY * 1000),
-      Math.round((curl + 1) * 1000),
-      Math.round(timing * 1000),
-    ).noise(0.18);
+    // Per-shot execution variance — bigger for weaker finishers (more luck), tiny
+    // for elite. Deterministic from the inputs, so the scene and the scorer agree.
+    const variance = 0.06 + (1 - challenge.forgiveness) * 0.22;
+    const noise = rng("aimvar", inKey).noise(variance);
+    const reach = Math.max(0.07, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05) * (1 + noise);
 
-    const reachX = Math.max(0.07, keeperReach(challenge, timing, power) - Math.abs(curl) * 0.05) * (1 + noise);
-    const reachY = clamp(reachX * 1.4, 0.22, 0.7);
-
-    // The keeper COMMITS to a guessed corner this shot (covered), plus a tighter
-    // central reflex. You score by going where he isn't — corners aren't free.
+    // The keeper covers a WIDE, LOW region (like a real one — the middle and low
+    // are easy, the top corners are the gap), and this shot COMMITS to a guessed
+    // corner too. You beat him only into the *opposite top corner*.
+    const dCentre = Math.hypot((fx - 0.5) / (reach * 2.0), (fy - 0.3) / (reach * 1.45));
     const { dir, high } = keeperGuess(challenge);
-    const dGuess = Math.hypot((fx - (0.5 + dir * 0.3)) / (reachX * 1.2), (fy - (high ? 0.62 : 0.34)) / reachY);
-    const dCentre = Math.hypot((fx - 0.5) / (reachX * 0.85), (fy - 0.36) / (reachY * 0.85));
-    const d = Math.min(dGuess, dCentre);
+    const dGuess = Math.hypot((fx - (0.5 + dir * 0.34)) / (reach * 1.3), (fy - (high ? 0.66 : 0.32)) / (reach * 1.55));
+    const d = Math.min(dCentre, dGuess);
     if (d <= 1) return clamp(0.1 + d * 0.2, 0, 0.34); // within the keeper's reach → saved
+
+    // Beat him positionally — but a near-post effort can be shanked, the more so
+    // the weaker the finisher (elite finishers are clinical into the corner).
+    const fromPost = Math.min(fx, 1 - fx); // 0 at a post, 0.5 dead centre
+    const scuffP = clamp((0.78 - challenge.forgiveness) * 0.7, 0, 0.5) * clamp((0.18 - fromPost) / 0.18, 0, 1);
+    if (rng("scuff", inKey).chance(scuffP)) return 0.16; // dragged wide/over
+
     const margin = d - 1;
     const cornerBonus = (Math.abs(fx - 0.5) / 0.5) * 0.14 + fy * 0.1; // wide + high = best
     return clamp(0.5 + margin * 0.42 + cornerBonus + Math.abs(curl) * 0.04, 0, 1);

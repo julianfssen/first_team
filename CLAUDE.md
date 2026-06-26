@@ -66,6 +66,24 @@ npx vitest run     # tests: engine determinism, store flow, DOM render
 npx eslint app components lib
 ```
 
+### Testing the shot without a human
+
+Two harnesses exist to validate the shot mini-game headlessly (so balance/feel
+can be checked without manual playtesting):
+
+- **Balance sim** — `npm run sim:shots`. Monte-Carlos thousands of shots through
+  the real engine (`buildSkillChallenge → keeperGuess → resolvePlayerBeat`) for
+  poor/avg/elite finishers × reader/sloppy/naive strategies and prints conversion
+  + keeper-guess balance. Pure TS, deterministic (seeded). The test
+  (`lib/game/__tests__/shotSim.test.ts`) is gated behind `SHOT_SIM=1` so it
+  doesn't run in the normal suite. Use this for "is it too easy / fair / varied".
+- **Visual harness** — `npm run build && PORT=3210 npm run start`, then
+  `npm run visual:shots` (`scripts/visual-shot.mjs`). Drives the real app in
+  headless Chromium (WebGL via SwiftShader, so the true-3D scene renders), aims
+  configurable spots (`PW_SHOTS="0.9:0.85,0.5:0.25"`), screenshots the dive +
+  result, and prints each shot's GOAL/SAVED + running conversion. Use this to
+  inspect how the scene *looks* (keeper dive/telegraph, curl, net).
+
 ## Adding content
 
 It's all data — append to the relevant file in `data/` and it's picked up:

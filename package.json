@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sim:shots": "SHOT_SIM=1 vitest run lib/game/__tests__/shotSim.test.ts --reporter=verbose",
+    "visual:shots": "node scripts/visual-shot.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -35,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "jsdom": "^29.1.1",
+    "playwright": "^1.61.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.9"
