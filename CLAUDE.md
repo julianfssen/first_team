@@ -82,7 +82,10 @@ can be checked without manual playtesting):
   headless Chromium (WebGL via SwiftShader, so the true-3D scene renders), aims
   configurable spots (`PW_SHOTS="0.9:0.85,0.5:0.25"`), screenshots the dive +
   result, and prints each shot's GOAL/SAVED + running conversion. Use this to
-  inspect how the scene *looks* (keeper dive/telegraph, curl, net).
+  inspect how the scene *looks* (keeper dive/telegraph, curl, net). Add
+  `?slomo=6` to the URL to slow the shot animation 6× (a dev aid in
+  `ShotScene3D`, no-op without the param) so individual frames are inspectable
+  despite SwiftShader's low capture rate.
 
 ## Adding content
 

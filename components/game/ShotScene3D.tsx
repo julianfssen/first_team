@@ -56,6 +56,10 @@ const CONTACT_MS = 300; // run-up + backswing before the foot connects
 const FLIGHT_MS = 720; // ball travel after contact
 const BOW3D = 2.6; // lateral swerve from curl (visible from the elevated camera)
 
+// Dev aid: add ?slomo=4 to the URL to slow the shot animation down for inspection.
+let SLOMO = 1;
+const elapsed = (shot: { fireAt: number }) => (performance.now() - shot.fireAt) / SLOMO;
+
 type ResultKind = "GOAL" | "CATCH" | "PARRY" | "POST" | "OVER" | "WIDE";
 type Shot = {
   curl: number;
@@ -145,7 +149,7 @@ function Net({ shot }: { shot: Shot | null }) {
       m.scale.setScalar(0.0001);
       return;
     }
-    const e = performance.now() - shot.fireAt - CONTACT_MS;
+    const e = elapsed(shot) - CONTACT_MS;
     const p = clamp(e / FLIGHT_MS, 0, 1);
     const bp = clamp((p - 0.82) / 0.18, 0, 1); // grows as the ball enters
     const s = Math.sin(bp * Math.PI * 0.5);
@@ -254,7 +258,7 @@ function Keeper({
     if (!g) return;
     const tt = state.clock.elapsedTime;
     // react to the strike (after contact), not the release
-    const e = shot ? performance.now() - shot.fireAt - CONTACT_MS : -1;
+    const e = shot ? elapsed(shot) - CONTACT_MS : -1;
     if (!shot || e < 0) {
       // pre-shot: alive on his toes + a growing TELEGRAPH lean toward his guess
       // (subtle early, readable late) so going the other way is a skill, not luck
@@ -335,8 +339,10 @@ function Keeper({
 }
 
 /** The shooter, foreground, seen from behind — runs up, plants, and strikes through. */
-const STRIKER_START: [number, number, number] = [-1.3, 0, 10.6];
-const STRIKER_PLANT: [number, number, number] = [-0.95, 0, 9.95];
+// Plant centred and tight to the (centred, z=9) ball so the strike connects and
+// the ball reads at his feet rather than floating off to the side.
+const STRIKER_START: [number, number, number] = [-0.4, 0, 10.3];
+const STRIKER_PLANT: [number, number, number] = [-0.06, 0, 9.5];
 
 function Striker({ shot }: { shot: Shot | null }) {
   const bodyRef = useRef<THREE.Group>(null);
@@ -355,7 +361,7 @@ function Striker({ shot }: { shot: Shot | null }) {
       s.rotation.x = -Math.sin(tt * 2) * 0.05;
       return;
     }
-    const e = performance.now() - shot.fireAt;
+    const e = elapsed(shot);
     const RUN = CONTACT_MS - 90; // approach, then a short plant+backswing into contact
     if (e < RUN) {
       const t = e / RUN;
@@ -370,21 +376,21 @@ function Striker({ shot }: { shot: Shot | null }) {
       k.rotation.x = stride * 0.7;
       s.rotation.x = -stride * 0.7;
     } else if (e < CONTACT_MS) {
-      const t = (e - RUN) / 90; // plant the standing foot, wind the kicking leg back
+      const t = (e - RUN) / 90; // plant the standing foot, wind the kicking leg BACK (up behind)
       b.position.set(...STRIKER_PLANT);
-      b.rotation.x = 0.06 - t * 0.18;
-      k.rotation.x = 0.2 + t * 0.85;
+      b.rotation.x = 0.06 - t * 0.16;
+      k.rotation.x = 0.2 - t * 1.2; // +0.2 → -1.0 (foot swings up behind)
       s.rotation.x = 0;
     } else {
-      const t = easeInOutCubic(clamp((e - CONTACT_MS) / 300, 0, 1)); // snap through + follow lean
+      const t = easeOutCubic(clamp((e - CONTACT_MS) / 280, 0, 1)); // strike THROUGH the ball, toward goal
       b.position.set(...STRIKER_PLANT);
-      b.rotation.x = -0.12 + t * 0.34;
-      k.rotation.x = 1.05 - t * 2.7;
+      b.rotation.x = -0.1 + t * 0.3;
+      k.rotation.x = -1.0 + t * 2.3; // -1.0 (back) → +1.3 (forward follow-through); passes the ball ~contact
       s.rotation.x = 0;
     }
   });
   return (
-    <group ref={bodyRef} position={STRIKER_START}>
+    <group ref={bodyRef} position={STRIKER_START} scale={0.82}>
       {/* standing leg (pivots at the hip too, for the run-up strides) */}
       <group ref={standRef} position={[0.16, 0.7, 0]}>
         <mesh position={[0, -0.34, 0]}>
@@ -437,7 +443,7 @@ function Ball({ shot }: { shot: Shot | null }) {
       m.position.set(0, BALL_R, START_Z);
       return;
     }
-    const e = performance.now() - shot.fireAt - CONTACT_MS;
+    const e = elapsed(shot) - CONTACT_MS;
     if (e < 0) {
       m.position.set(0, BALL_R, START_Z); // wait at the spot through the run-up
       return;
@@ -550,6 +556,12 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
   const windowMs = challenge.windowMs ?? 1700;
   const guess = useMemo(() => keeperGuess(challenge), [challenge]);
 
+  useEffect(() => {
+    const v = Number(new URLSearchParams(window.location.search).get("slomo"));
+    if (v > 0) SLOMO = v;
+    return () => { SLOMO = 1; };
+  }, []);
+
   function toLocal(e: React.PointerEvent): { x: number; y: number } {
     const r = inputRef.current?.getBoundingClientRect();
     if (!r || !r.width || !r.height) return ANCHOR;
@@ -573,8 +585,9 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
     window.setTimeout(() => {
       sfx.kick();
       haptics.light();
-    }, CONTACT_MS);
-    window.setTimeout(() => onComplete(input), CONTACT_MS + FLIGHT_MS - 40);
+    }, CONTACT_MS * SLOMO);
+    // hold a beat after the ball arrives so the goal/save can land before the result panel
+    window.setTimeout(() => onComplete(input), (CONTACT_MS + FLIGHT_MS + 480) * SLOMO);
   }
   useEffect(() => {
     fireRef.current = () => {
@@ -626,8 +639,8 @@ export function ShotScene3D({ challenge, onComplete }: { challenge: SkillChallen
     <div className="select-none">
       <div className="relative h-64 w-full overflow-hidden rounded-xl bg-gradient-to-b from-[#6fb0e0] via-[#bfe0ee] to-[#3f9b63]">
         <Canvas
-          camera={{ position: [0, 5, 18], fov: 38 }}
-          onCreated={({ camera }) => camera.lookAt(0, 0.6, 3)}
+          camera={{ position: [0, 5.6, 17], fov: 39 }}
+          onCreated={({ camera }) => camera.lookAt(0, 0.5, 3)}
           dpr={[1, 2]}
         >
           <fog attach="fog" args={["#cfe6f2", 34, 66]} />
